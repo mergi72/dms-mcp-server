@@ -17,6 +17,7 @@ def _base_config() -> dict:
     return {
         "bridge": {"url": "http://127.0.0.1:8765", "minimumVersion": "0.2.0"},
         "broker": {"url": "http://127.0.0.1:8776"},
+        "inspector": {"host": "127.0.0.1", "port": 8780},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
     }
 
@@ -29,6 +30,8 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
 
     assert settings.bridge_url == "http://127.0.0.1:8765"
     assert settings.broker_url == "http://127.0.0.1:8776"
+    assert settings.inspector_host == "127.0.0.1"
+    assert settings.inspector_port == 8780
     assert settings.timeout_seconds == 30
     assert settings.max_document_bytes == 1_048_576
     assert settings.minimum_bridge_version == "0.2.0"

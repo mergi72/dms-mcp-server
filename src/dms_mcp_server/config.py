@@ -65,6 +65,8 @@ class Settings:
     timeout_seconds: float
     max_document_bytes: int
     minimum_bridge_version: str
+    inspector_host: str = "127.0.0.1"
+    inspector_port: int = 8780
 
 
 def load_settings(
@@ -90,9 +92,10 @@ def load_settings(
 
     bridge = payload.get("bridge")
     broker = payload.get("broker")
+    inspector = payload.get("inspector")
     runtime = payload.get("runtime")
-    if not isinstance(bridge, dict) or not isinstance(broker, dict) or not isinstance(runtime, dict):
-        raise ValueError("Configuration requires bridge, broker and runtime JSON objects.")
+    if not all(isinstance(section, dict) for section in (bridge, broker, inspector, runtime)):
+        raise ValueError("Configuration requires bridge, broker, inspector and runtime JSON objects.")
 
     bridge_url = os.getenv("DMS_BRIDGE_URL") or _required_string(bridge, "url", "bridge")
     minimum_bridge_version = os.getenv("DMS_MCP_MIN_BRIDGE_VERSION") or _required_string(
@@ -104,6 +107,10 @@ def load_settings(
     return Settings(
         bridge_url=bridge_url.rstrip("/"),
         broker_url=broker_url.rstrip("/"),
+        inspector_host=os.getenv("DMS_MCP_INSPECTOR_HOST") or _required_string(inspector, "host", "inspector"),
+        inspector_port=_positive_int(
+            os.getenv("DMS_MCP_INSPECTOR_PORT", inspector.get("port")), "inspector.port"
+        ),
         timeout_seconds=_positive_float(timeout, "runtime.timeoutSeconds"),
         max_document_bytes=_positive_int(max_bytes, "runtime.maxDocumentBytes"),
         minimum_bridge_version=minimum_bridge_version,

@@ -6,6 +6,10 @@
   "broker": {
     "url": "http://127.0.0.1:8776"
   },
+  "inspector": {
+    "host": "127.0.0.1",
+    "port": 8780
+  },
   "runtime": {
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576

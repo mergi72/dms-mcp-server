@@ -20,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.run_live_smoke import _call_json
+from dms_mcp_server.config import load_settings
 
 
 ALLOWED_TOOLS = {"bridge_health", "list_connections", "list_items", "get_item_info", "read_document"}
@@ -282,19 +283,23 @@ def create_handler(server: Path, timeout: float) -> type[BaseHTTPRequestHandler]
 def parse_args() -> argparse.Namespace:
     default_server = PROJECT_ROOT / ".venv" / "Scripts" / "dms-mcp-server.exe"
     parser = argparse.ArgumentParser(description="Open a local read-only web inspector for DMS MCP calls.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8780)
+    parser.add_argument("--host")
+    parser.add_argument("--port", type=int)
     parser.add_argument("--server", default=str(default_server))
-    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--timeout", type=float)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if args.host not in {"127.0.0.1", "localhost"}:
+    settings = load_settings()
+    host = args.host or settings.inspector_host
+    port = args.port or settings.inspector_port
+    timeout = args.timeout or settings.timeout_seconds
+    if host not in {"127.0.0.1", "localhost"}:
         raise SystemExit("Debug inspector may bind only to localhost.")
-    server = ThreadingHTTPServer((args.host, args.port), create_handler(Path(args.server), args.timeout))
-    print(f"DMS MCP Inspector: http://{args.host}:{args.port}")
+    server = ThreadingHTTPServer((host, port), create_handler(Path(args.server), timeout))
+    print(f"DMS MCP Inspector: http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
