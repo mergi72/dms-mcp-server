@@ -7,7 +7,6 @@
   },
   "runtime": {
     "timeoutSeconds": 30,
-    "maxDocumentBytes": 1048576,
-    "credentialId": null
+    "maxDocumentBytes": 1048576
   }
 }

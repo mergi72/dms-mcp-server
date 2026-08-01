@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -23,7 +24,7 @@ class BrokerClient:
     def resolve(self, credential_id: str) -> dict[str, Any]:
         try:
             response = self._client.post(
-                "/auth/resolve",
+                "/credentials/resolve",
                 json={"auth": {"mode": "windows", "target": credential_id, "required": True}},
             )
             response.raise_for_status()
@@ -54,9 +55,36 @@ class BridgeClient:
             transport=transport,
         )
 
-    def _auth(self, credential_id: str | None) -> dict[str, Any] | None:
-        resolved_id = credential_id or self._settings.default_credential_id
-        return self._broker.resolve(resolved_id) if resolved_id else None
+    @staticmethod
+    def _connection_name(path: str) -> str | None:
+        if ":/" not in path:
+            return None
+        name, _separator, _remainder = path.partition(":/")
+        normalized = name.strip()
+        return normalized or None
+
+    def connection_detail(self, connection_name: str) -> dict[str, Any]:
+        encoded_name = quote(connection_name.strip(), safe="")
+        return self._json("GET", f"/bridge/wfx/connections/{encoded_name}")
+
+    def _auth_for_path(self, path: str) -> dict[str, Any] | None:
+        connection_name = self._connection_name(path)
+        if connection_name is None:
+            return None
+
+        detail = self.connection_detail(connection_name)
+        data = detail.get("data")
+        auth = data.get("auth") if isinstance(data, dict) else None
+        if not isinstance(auth, dict):
+            raise UpstreamError(f"Connection {connection_name!r} has no auth contract in bridge.")
+
+        for key in ("credential_id", "credentialId", "target", "targetBase", "target_base"):
+            credential_id = auth.get(key)
+            if isinstance(credential_id, str) and credential_id.strip():
+                return self._broker.resolve(credential_id.strip())
+        if auth.get("required") is False or str(auth.get("mode") or "").lower() == "none":
+            return None
+        raise UpstreamError(f"Connection {connection_name!r} requires auth but has no credential_id.")
 
     def _json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         try:
@@ -65,6 +93,8 @@ class BridgeClient:
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise UpstreamError(f"DMS Provider Bridge request failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise UpstreamError("DMS Provider Bridge returned a non-object JSON response.")
         if payload.get("ok") is False:
             raise UpstreamError(str(payload.get("message") or "DMS Provider Bridge operation failed."))
         return payload
@@ -75,25 +105,25 @@ class BridgeClient:
     def list_connections(self) -> dict[str, Any]:
         return self._json("GET", "/bridge/wfx/connections")
 
-    def list_items(self, path: str, credential_id: str | None = None) -> dict[str, Any]:
+    def list_items(self, path: str) -> dict[str, Any]:
         return self._json(
             "POST",
             "/bridge/wfx/list",
-            json={"path": path, "auth": self._auth(credential_id)},
+            json={"path": path, "auth": self._auth_for_path(path)},
         )
 
-    def stat(self, path: str, credential_id: str | None = None) -> dict[str, Any]:
+    def stat(self, path: str) -> dict[str, Any]:
         return self._json(
             "POST",
             "/bridge/wfx/stat",
-            json={"path": path, "auth": self._auth(credential_id)},
+            json={"path": path, "auth": self._auth_for_path(path)},
         )
 
-    def read_document(self, path: str, credential_id: str | None = None) -> dict[str, Any]:
+    def read_document(self, path: str) -> dict[str, Any]:
         request = self._client.build_request(
             "POST",
             "/bridge/wfx/download-raw",
-            json={"path": path, "auth": self._auth(credential_id)},
+            json={"path": path, "auth": self._auth_for_path(path)},
         )
         response: httpx.Response | None = None
         try:

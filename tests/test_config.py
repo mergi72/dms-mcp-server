@@ -17,7 +17,7 @@ def _base_config() -> dict:
     return {
         "bridge": {"url": "http://127.0.0.1:8765"},
         "broker": {"url": "http://127.0.0.1:8776"},
-        "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576, "credentialId": None},
+        "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
     }
 
 
@@ -55,13 +55,11 @@ def test_environment_overrides_json(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     _write_config(machine_dir, "mcp.json", _base_config())
     monkeypatch.setenv("DMS_BRIDGE_URL", "http://127.0.0.1:9100/")
     monkeypatch.setenv("DMS_MCP_MAX_DOCUMENT_BYTES", "2048")
-    monkeypatch.setenv("DMS_MCP_CREDENTIAL_ID", "company/dms")
 
     settings = load_settings(machine_dir, tmp_path / "missing-user")
 
     assert settings.bridge_url == "http://127.0.0.1:9100"
     assert settings.max_document_bytes == 2048
-    assert settings.default_credential_id == "company/dms"
 
 
 def test_missing_machine_config_is_an_error(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dms-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "Read-only MCP server for DMS Provider Bridge."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,4 +29,3 @@ pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dms_mcp_server"]
-

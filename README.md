@@ -23,9 +23,10 @@ MCP client --stdio--> dms-mcp-server --HTTP--> dms-provider-bridge --> DMS
                             |
                             +----------HTTP--> credential-broker
 ```
-When a tool receives a `credential_id`, the MCP server resolves it through the
-broker and passes the resulting in-memory auth context to the bridge. Secrets
-are not returned in tool results or written to configuration.
+For a connection path, the MCP server reads the connection auth contract from
+the bridge, sends its `credential_id` to the broker, and passes the resulting
+in-memory auth context to the bridge operation. Secrets are not returned in
+tool results or written to MCP configuration.
 
 ## Configuration
 
@@ -37,8 +38,7 @@ Runtime data lives in `config/mcp.json`, separately from application code:
   "broker": { "url": "http://127.0.0.1:8776" },
   "runtime": {
     "timeoutSeconds": 30,
-    "maxDocumentBytes": 1048576,
-    "credentialId": null
+    "maxDocumentBytes": 1048576
   }
 }
 ```
@@ -56,10 +56,9 @@ Environment variables remain available as final runtime overrides:
 | `DMS_BROKER_URL` | `http://127.0.0.1:8776` | Local broker URL |
 | `DMS_MCP_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout |
 | `DMS_MCP_MAX_DOCUMENT_BYTES` | `1048576` | Maximum document returned to MCP |
-| `DMS_MCP_CREDENTIAL_ID` | unset | Optional default credential target |
 
-Tool-level `credential_id` overrides the configured default. If neither is
-provided, the bridge receives no explicit auth and may use connection defaults.
+Credential IDs are owned by bridge connection configuration and are never
+selected by the AI or duplicated in MCP configuration.
 
 ## Development
 

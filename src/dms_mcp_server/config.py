@@ -64,7 +64,6 @@ class Settings:
     broker_url: str
     timeout_seconds: float
     max_document_bytes: int
-    default_credential_id: str | None
 
 
 def load_settings(
@@ -98,15 +97,9 @@ def load_settings(
     broker_url = os.getenv("DMS_BROKER_URL") or _required_string(broker, "url", "broker")
     timeout = os.getenv("DMS_MCP_TIMEOUT_SECONDS", runtime.get("timeoutSeconds"))
     max_bytes = os.getenv("DMS_MCP_MAX_DOCUMENT_BYTES", runtime.get("maxDocumentBytes"))
-    credential_id = os.getenv("DMS_MCP_CREDENTIAL_ID")
-    if credential_id is None:
-        configured_id = runtime.get("credentialId")
-        credential_id = configured_id.strip() if isinstance(configured_id, str) and configured_id.strip() else None
-
     return Settings(
         bridge_url=bridge_url.rstrip("/"),
         broker_url=broker_url.rstrip("/"),
         timeout_seconds=_positive_float(timeout, "runtime.timeoutSeconds"),
         max_document_bytes=_positive_int(max_bytes, "runtime.maxDocumentBytes"),
-        default_credential_id=credential_id,
     )

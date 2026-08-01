@@ -30,19 +30,19 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         return bridge.list_connections()
 
     @mcp.tool()
-    def list_items(path: str = "/", credential_id: str | None = None) -> dict:
+    def list_items(path: str = "/") -> dict:
         """List files and folders at a connection:/path location."""
-        return bridge.list_items(path, credential_id)
+        return bridge.list_items(path)
 
     @mcp.tool()
-    def get_item_info(path: str, credential_id: str | None = None) -> dict:
+    def get_item_info(path: str) -> dict:
         """Return metadata for one file or folder at connection:/path."""
-        return bridge.stat(path, credential_id)
+        return bridge.stat(path)
 
     @mcp.tool()
-    def read_document(path: str, credential_id: str | None = None) -> dict:
+    def read_document(path: str) -> dict:
         """Read a size-limited document; text is decoded and binary data is base64 encoded."""
-        return bridge.read_document(path, credential_id)
+        return bridge.read_document(path)
 
     return mcp
 
