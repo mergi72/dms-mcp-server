@@ -1,5 +1,9 @@
 # dms-mcp-server
 
+[![CI](https://github.com/mergi72/dms-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mergi72/dms-mcp-server/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-%3E%3D3.11-blue)](https://www.python.org/)
+[![Release](https://img.shields.io/github/v/release/mergi72/dms-mcp-server?label=Release&color=blueviolet)](https://github.com/mergi72/dms-mcp-server/releases/latest)
+
 Read-only Model Context Protocol server for DMS repositories exposed by
 `dms-provider-bridge`. Credential resolution is delegated to the local
 `credential-broker`; the MCP server never reads Windows Credential Manager
