@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 
-_VERSION_PATTERN = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+_VERSION_PATTERN = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
 
 
 def _version_tuple(value: str) -> tuple[int, int, int]:

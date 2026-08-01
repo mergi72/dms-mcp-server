@@ -74,7 +74,7 @@ connections instead of routing them through `HTTP_PROXY` or `ALL_PROXY`.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\pip.exe install -e ".[dev]"
-.\.venv\Scripts\pytest.exe
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 Run the stdio server:
@@ -91,6 +91,23 @@ Run the read-only live smoke test while bridge and broker are running:
 
 The smoke test exercises all read-only tools. It prints document metadata,
 size and SHA-256 only; document content is never printed.
+
+Display a bounded tree of DMS folders and files through the MCP server:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\debug_dms.py alfresco edocat --max-depth 2
+```
+
+Optionally verify one document without printing its content:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\debug_dms.py alfresco `
+  --document "alfresco:/Shared/report.docx"
+```
+
+The debug command prints names and available item metadata. Document
+verification prints only MIME type, byte size and SHA-256. Traversal is bounded
+by `--max-depth`, `--max-directories` and `--max-items`.
 
 Example MCP client configuration:
 
