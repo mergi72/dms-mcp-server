@@ -15,7 +15,7 @@ def _write_config(directory: Path, name: str, payload: dict) -> None:
 
 def _base_config() -> dict:
     return {
-        "bridge": {"url": "http://127.0.0.1:8765"},
+        "bridge": {"url": "http://127.0.0.1:8765", "minimumVersion": "0.2.0"},
         "broker": {"url": "http://127.0.0.1:8776"},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
     }
@@ -31,6 +31,7 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     assert settings.broker_url == "http://127.0.0.1:8776"
     assert settings.timeout_seconds == 30
     assert settings.max_document_bytes == 1_048_576
+    assert settings.minimum_bridge_version == "0.2.0"
 
 
 def test_user_local_json_overrides_machine_config(tmp_path: Path) -> None:

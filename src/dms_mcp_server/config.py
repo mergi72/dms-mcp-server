@@ -64,6 +64,7 @@ class Settings:
     broker_url: str
     timeout_seconds: float
     max_document_bytes: int
+    minimum_bridge_version: str
 
 
 def load_settings(
@@ -94,6 +95,9 @@ def load_settings(
         raise ValueError("Configuration requires bridge, broker and runtime JSON objects.")
 
     bridge_url = os.getenv("DMS_BRIDGE_URL") or _required_string(bridge, "url", "bridge")
+    minimum_bridge_version = os.getenv("DMS_MCP_MIN_BRIDGE_VERSION") or _required_string(
+        bridge, "minimumVersion", "bridge"
+    )
     broker_url = os.getenv("DMS_BROKER_URL") or _required_string(broker, "url", "broker")
     timeout = os.getenv("DMS_MCP_TIMEOUT_SECONDS", runtime.get("timeoutSeconds"))
     max_bytes = os.getenv("DMS_MCP_MAX_DOCUMENT_BYTES", runtime.get("maxDocumentBytes"))
@@ -102,4 +106,5 @@ def load_settings(
         broker_url=broker_url.rstrip("/"),
         timeout_seconds=_positive_float(timeout, "runtime.timeoutSeconds"),
         max_document_bytes=_positive_int(max_bytes, "runtime.maxDocumentBytes"),
+        minimum_bridge_version=minimum_bridge_version,
     )

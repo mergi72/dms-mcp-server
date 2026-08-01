@@ -7,6 +7,7 @@ from urllib.parse import quote
 import httpx
 
 from dms_mcp_server.config import Settings
+from dms_mcp_server.compatibility import require_supported_bridge_version
 
 
 class UpstreamError(RuntimeError):
@@ -19,6 +20,7 @@ class BrokerClient:
             base_url=settings.broker_url,
             timeout=settings.timeout_seconds,
             transport=transport,
+            trust_env=False,
         )
 
     def resolve(self, credential_id: str) -> dict[str, Any]:
@@ -31,6 +33,8 @@ class BrokerClient:
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise UpstreamError(f"Credential Broker request failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise UpstreamError("Credential Broker returned a non-object JSON response.")
         if payload.get("ok") is not True or not isinstance(payload.get("auth"), dict):
             raise UpstreamError(str(payload.get("message") or "Credential Broker did not resolve credentials."))
 
@@ -53,7 +57,23 @@ class BridgeClient:
             base_url=settings.bridge_url,
             timeout=settings.timeout_seconds,
             transport=transport,
+            trust_env=False,
         )
+        self._compatibility_checked = False
+
+    def _ensure_compatible(self) -> dict[str, Any]:
+        if self._compatibility_checked:
+            return {}
+        health = self._json("GET", "/health")
+        version = health.get("version")
+        if not isinstance(version, str) or not version.strip():
+            raise UpstreamError("Bridge health response has no version.")
+        try:
+            require_supported_bridge_version(version, self._settings.minimum_bridge_version)
+        except RuntimeError as exc:
+            raise UpstreamError(str(exc)) from exc
+        self._compatibility_checked = True
+        return health
 
     @staticmethod
     def _connection_name(path: str) -> str | None:
@@ -100,12 +120,23 @@ class BridgeClient:
         return payload
 
     def health(self) -> dict[str, Any]:
-        return self._json("GET", "/health")
+        health = self._json("GET", "/health")
+        version = health.get("version")
+        if not isinstance(version, str) or not version.strip():
+            raise UpstreamError("Bridge health response has no version.")
+        try:
+            require_supported_bridge_version(version, self._settings.minimum_bridge_version)
+        except RuntimeError as exc:
+            raise UpstreamError(str(exc)) from exc
+        self._compatibility_checked = True
+        return health
 
     def list_connections(self) -> dict[str, Any]:
+        self._ensure_compatible()
         return self._json("GET", "/bridge/wfx/connections")
 
     def list_items(self, path: str) -> dict[str, Any]:
+        self._ensure_compatible()
         return self._json(
             "POST",
             "/bridge/wfx/list",
@@ -113,6 +144,7 @@ class BridgeClient:
         )
 
     def stat(self, path: str) -> dict[str, Any]:
+        self._ensure_compatible()
         return self._json(
             "POST",
             "/bridge/wfx/stat",
@@ -120,6 +152,7 @@ class BridgeClient:
         )
 
     def read_document(self, path: str) -> dict[str, Any]:
+        self._ensure_compatible()
         request = self._client.build_request(
             "POST",
             "/bridge/wfx/download-raw",
@@ -131,12 +164,21 @@ class BridgeClient:
             response.raise_for_status()
             if response.headers.get("X-Bridge-Raw-Content") != "1":
                 payload = response.json()
+                if not isinstance(payload, dict):
+                    raise UpstreamError("Bridge download error response is not a JSON object.")
                 raise UpstreamError(str(payload.get("message") or "Document download failed."))
             declared_size = response.headers.get("Content-Length")
-            if declared_size and int(declared_size) > self._settings.max_document_bytes:
-                raise UpstreamError(
-                    f"Document exceeds the {self._settings.max_document_bytes} byte MCP read limit."
-                )
+            if declared_size:
+                try:
+                    parsed_size = int(declared_size)
+                except ValueError as exc:
+                    raise UpstreamError("Bridge returned an invalid Content-Length header.") from exc
+                if parsed_size < 0:
+                    raise UpstreamError("Bridge returned a negative Content-Length header.")
+                if parsed_size > self._settings.max_document_bytes:
+                    raise UpstreamError(
+                        f"Document exceeds the {self._settings.max_document_bytes} byte MCP read limit."
+                    )
             chunks: list[bytes] = []
             size = 0
             for chunk in response.iter_bytes():

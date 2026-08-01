@@ -34,7 +34,10 @@ Runtime data lives in `config/mcp.json`, separately from application code:
 
 ```json
 {
-  "bridge": { "url": "http://127.0.0.1:8765" },
+  "bridge": {
+    "url": "http://127.0.0.1:8765",
+    "minimumVersion": "0.2.0"
+  },
   "broker": { "url": "http://127.0.0.1:8776" },
   "runtime": {
     "timeoutSeconds": 30,
@@ -43,8 +46,9 @@ Runtime data lives in `config/mcp.json`, separately from application code:
 }
 ```
 
-The machine configuration is authoritative. Optional user overrides are loaded
-from `%APPDATA%\\DMS MCP\\config\\mcp.local.json` and merged over it. Set
+The machine configuration provides the required base document. Optional user
+overrides are loaded from `%APPDATA%\\DMS MCP\\config\\mcp.local.json` and
+merged over that base. Set
 `DMS_MCP_MACHINE_CONFIG_DIR` or `DMS_MCP_USER_CONFIG_DIR` to use other config
 directories.
 
@@ -56,9 +60,14 @@ Environment variables remain available as final runtime overrides:
 | `DMS_BROKER_URL` | `http://127.0.0.1:8776` | Local broker URL |
 | `DMS_MCP_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout |
 | `DMS_MCP_MAX_DOCUMENT_BYTES` | `1048576` | Maximum document returned to MCP |
+| `DMS_MCP_MIN_BRIDGE_VERSION` | `0.2.0` | Minimum compatible bridge version |
 
 Credential IDs are owned by bridge connection configuration and are never
 selected by the AI or duplicated in MCP configuration.
+
+Bridge and broker HTTP clients ignore system proxy environment variables. This
+keeps local credential resolution and bridge traffic on their configured direct
+connections instead of routing them through `HTTP_PROXY` or `ALL_PROXY`.
 
 ## Development
 
@@ -73,6 +82,15 @@ Run the stdio server:
 ```powershell
 .\.venv\Scripts\dms-mcp-server.exe
 ```
+
+Run the read-only live smoke test while bridge and broker are running:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_smoke.py alfresco edocat
+```
+
+The smoke test exercises all read-only tools. It prints document metadata,
+size and SHA-256 only; document content is never printed.
 
 Example MCP client configuration:
 

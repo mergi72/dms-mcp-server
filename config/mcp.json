@@ -1,6 +1,7 @@
 {
   "bridge": {
-    "url": "http://127.0.0.1:8765"
+    "url": "http://127.0.0.1:8765",
+    "minimumVersion": "0.2.0"
   },
   "broker": {
     "url": "http://127.0.0.1:8776"
