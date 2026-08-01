@@ -23,14 +23,32 @@ MCP client --stdio--> dms-mcp-server --HTTP--> dms-provider-bridge --> DMS
                             |
                             +----------HTTP--> credential-broker
 ```
-
 When a tool receives a `credential_id`, the MCP server resolves it through the
 broker and passes the resulting in-memory auth context to the bridge. Secrets
 are not returned in tool results or written to configuration.
 
 ## Configuration
 
-Environment variables:
+Runtime data lives in `config/mcp.json`, separately from application code:
+
+```json
+{
+  "bridge": { "url": "http://127.0.0.1:8765" },
+  "broker": { "url": "http://127.0.0.1:8776" },
+  "runtime": {
+    "timeoutSeconds": 30,
+    "maxDocumentBytes": 1048576,
+    "credentialId": null
+  }
+}
+```
+
+The machine configuration is authoritative. Optional user overrides are loaded
+from `%APPDATA%\\DMS MCP\\config\\mcp.local.json` and merged over it. Set
+`DMS_MCP_MACHINE_CONFIG_DIR` or `DMS_MCP_USER_CONFIG_DIR` to use other config
+directories.
+
+Environment variables remain available as final runtime overrides:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -72,4 +90,3 @@ Example MCP client configuration:
   }
 }
 ```
-

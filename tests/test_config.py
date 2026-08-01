@@ -1,37 +1,69 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from dms_mcp_server.config import Settings
+from dms_mcp_server.config import load_settings
 
 
-def test_settings_use_local_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in (
-        "DMS_BRIDGE_URL",
-        "DMS_BROKER_URL",
-        "DMS_MCP_TIMEOUT_SECONDS",
-        "DMS_MCP_MAX_DOCUMENT_BYTES",
-        "DMS_MCP_CREDENTIAL_ID",
-    ):
-        monkeypatch.delenv(name, raising=False)
+def _write_config(directory: Path, name: str, payload: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(json.dumps(payload), encoding="utf-8")
 
-    settings = Settings.from_env()
+
+def _base_config() -> dict:
+    return {
+        "bridge": {"url": "http://127.0.0.1:8765"},
+        "broker": {"url": "http://127.0.0.1:8776"},
+        "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576, "credentialId": None},
+    }
+
+
+def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    _write_config(machine_dir, "mcp.json", _base_config())
+
+    settings = load_settings(machine_dir, tmp_path / "missing-user")
 
     assert settings.bridge_url == "http://127.0.0.1:8765"
     assert settings.broker_url == "http://127.0.0.1:8776"
+    assert settings.timeout_seconds == 30
+    assert settings.max_document_bytes == 1_048_576
 
 
-def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DMS_BRIDGE_URL", "http://127.0.0.1:9000/")
-    monkeypatch.setenv("DMS_BROKER_URL", "http://127.0.0.1:9001/")
-    monkeypatch.setenv("DMS_MCP_TIMEOUT_SECONDS", "12.5")
+def test_user_local_json_overrides_machine_config(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    user_dir = tmp_path / "user"
+    _write_config(machine_dir, "mcp.json", _base_config())
+    _write_config(
+        user_dir,
+        "mcp.local.json",
+        {"bridge": {"url": "http://127.0.0.1:9000"}, "runtime": {"timeoutSeconds": 12}},
+    )
+
+    settings = load_settings(machine_dir, user_dir)
+
+    assert settings.bridge_url == "http://127.0.0.1:9000"
+    assert settings.broker_url == "http://127.0.0.1:8776"
+    assert settings.timeout_seconds == 12
+
+
+def test_environment_overrides_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    _write_config(machine_dir, "mcp.json", _base_config())
+    monkeypatch.setenv("DMS_BRIDGE_URL", "http://127.0.0.1:9100/")
     monkeypatch.setenv("DMS_MCP_MAX_DOCUMENT_BYTES", "2048")
     monkeypatch.setenv("DMS_MCP_CREDENTIAL_ID", "company/dms")
 
-    settings = Settings.from_env()
+    settings = load_settings(machine_dir, tmp_path / "missing-user")
 
-    assert settings.bridge_url == "http://127.0.0.1:9000"
-    assert settings.broker_url == "http://127.0.0.1:9001"
-    assert settings.timeout_seconds == 12.5
+    assert settings.bridge_url == "http://127.0.0.1:9100"
     assert settings.max_document_bytes == 2048
     assert settings.default_credential_id == "company/dms"
+
+
+def test_missing_machine_config_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="mcp.json"):
+        load_settings(tmp_path / "missing", tmp_path / "user")

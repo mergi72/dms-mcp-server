@@ -1,0 +1,13 @@
+{
+  "bridge": {
+    "url": "http://127.0.0.1:8765"
+  },
+  "broker": {
+    "url": "http://127.0.0.1:8776"
+  },
+  "runtime": {
+    "timeoutSeconds": 30,
+    "maxDocumentBytes": 1048576,
+    "credentialId": null
+  }
+}

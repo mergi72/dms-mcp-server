@@ -10,7 +10,7 @@ from dms_mcp_server.config import Settings
 
 
 def test_list_items_resolves_credentials_through_broker() -> None:
-    settings = Settings()
+    settings = Settings("http://127.0.0.1:8765", "http://127.0.0.1:8776", 30, 1_048_576, None)
 
     def broker_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/auth/resolve"
@@ -39,7 +39,7 @@ def test_list_items_resolves_credentials_through_broker() -> None:
 
 
 def test_read_text_document() -> None:
-    settings = Settings(max_document_bytes=100)
+    settings = Settings("http://127.0.0.1:8765", "http://127.0.0.1:8776", 30, 100, None)
     broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
 
     def bridge_handler(_request: httpx.Request) -> httpx.Response:
@@ -58,7 +58,7 @@ def test_read_text_document() -> None:
 
 
 def test_read_document_enforces_limit() -> None:
-    settings = Settings(max_document_bytes=3)
+    settings = Settings("http://127.0.0.1:8765", "http://127.0.0.1:8776", 30, 3, None)
     broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
     bridge = BridgeClient(
         settings,
@@ -74,4 +74,3 @@ def test_read_document_enforces_limit() -> None:
 
     with pytest.raises(UpstreamError, match="exceeds"):
         bridge.read_document("alfresco:/large.bin")
-

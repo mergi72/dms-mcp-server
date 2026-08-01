@@ -3,11 +3,11 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from dms_mcp_server.clients import BridgeClient, BrokerClient
-from dms_mcp_server.config import Settings
+from dms_mcp_server.config import Settings, load_settings
 
 
 def create_server(settings: Settings | None = None) -> FastMCP:
-    active_settings = settings or Settings.from_env()
+    active_settings = settings or load_settings()
     broker = BrokerClient(active_settings)
     bridge = BridgeClient(active_settings, broker)
     mcp = FastMCP(
@@ -53,4 +53,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
