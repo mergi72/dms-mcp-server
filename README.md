@@ -109,6 +109,16 @@ The debug command prints names and available item metadata. Document
 verification prints only MIME type, byte size and SHA-256. Traversal is bounded
 by `--max-depth`, `--max-directories` and `--max-items`.
 
+Run the local web inspector to see every MCP request and response side by side:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\web_debug.py
+```
+
+Then open `http://127.0.0.1:8780`. The inspector exposes only the five
+read-only tools and binds only to localhost. For `read_document`, it displays
+MIME type, byte size and SHA-256 while omitting document content.
+
 Example MCP client configuration:
 
 ```json
