@@ -115,6 +115,16 @@ function itemButton(label, path, isFolder) {
   return button;
 }
 function joinedPath(parent, name) { return `${parent.replace(/[\\/]+$/, '')}/${name.replace(/^[\\/]+/, '')}`; }
+function parentPath(path) {
+  const normalized = path.replace(/\\/g, '/');
+  const marker = normalized.indexOf(':/');
+  if (marker < 1) return null;
+  const root = normalized.slice(0, marker + 2);
+  const parts = normalized.slice(marker + 2).split('/').filter(Boolean);
+  if (!parts.length) return null;
+  parts.pop();
+  return parts.length ? `${root}${parts.join('/')}` : root;
+}
 function renderUI(tool, payload, request) {
   uiView.replaceChildren();
   if (payload.error) { uiView.append(valueCard({error: payload.error})); return; }
@@ -128,6 +138,8 @@ function renderUI(tool, payload, request) {
   if (tool === 'list_items') {
     const entries = result.data?.items || [];
     const items = document.createElement('div'); items.className = 'items';
+    const parent = parentPath(request.arguments.path);
+    if (parent) items.append(itemButton('..', parent, true));
     entries.forEach(item => items.append(itemButton(item.name || '<unnamed>', joinedPath(request.arguments.path, item.name || ''), item.is_folder === true)));
     if (!entries.length) items.textContent = 'Složka je prázdná.';
     uiView.append(items); return;

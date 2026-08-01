@@ -75,3 +75,8 @@ def test_html_offers_response_and_ui_views() -> None:
     assert "MCP Response" in HTML
     assert "UI View" in HTML
     assert "renderUI(tool, payload, request)" in HTML
+
+
+def test_html_offers_parent_folder_navigation() -> None:
+    assert "function parentPath(path)" in HTML
+    assert "itemButton('..', parent, true)" in HTML
