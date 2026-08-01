@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 import httpx
 import pytest
@@ -116,6 +117,38 @@ def test_read_text_document() -> None:
 
     assert result["text"] == "Ahoj DMS"
     assert result["mime_type"] == "text/plain"
+    assert result["sha256"] == hashlib.sha256("Ahoj DMS".encode()).hexdigest()
+
+
+def test_read_text_document_hashes_original_bytes() -> None:
+    settings = _settings(max_document_bytes=100)
+    broker = BrokerClient(
+        settings,
+        httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"ok": True, "auth": {"mode": "credentials"}})
+        ),
+    )
+    original = b"\x80non-utf8"
+
+    def bridge_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"auth": {"required": True, "credential_id": "company/dms"}}},
+            )
+        return httpx.Response(
+            200,
+            content=original,
+            headers={"X-Bridge-Raw-Content": "1", "Content-Type": "text/plain"},
+        )
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(bridge_handler))
+    result = bridge.read_document("alfresco:/legacy.txt")
+
+    assert "�" in result["text"]
+    assert result["sha256"] == hashlib.sha256(original).hexdigest()
 
 
 def test_read_document_enforces_limit() -> None:

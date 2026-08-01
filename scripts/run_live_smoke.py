@@ -76,6 +76,9 @@ async def _find_readable_file(
 
 
 def _content_digest(payload: dict[str, Any]) -> str:
+    digest = payload.get("sha256")
+    if isinstance(digest, str) and digest:
+        return digest
     if isinstance(payload.get("text"), str):
         content = payload["text"].encode("utf-8")
     elif isinstance(payload.get("content_base64"), str):

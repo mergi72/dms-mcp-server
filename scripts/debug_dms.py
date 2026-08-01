@@ -122,7 +122,7 @@ async def run(args: argparse.Namespace) -> None:
                     "info_ok": info.get("ok"),
                     "mime_type": document.get("mime_type"),
                     "size": len(content),
-                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "sha256": document.get("sha256") or hashlib.sha256(content).hexdigest(),
                 }
                 print("\nDocument verification:")
                 print(json.dumps(summary, ensure_ascii=False, indent=2))

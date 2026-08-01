@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from typing import Any
 from urllib.parse import quote
 
@@ -196,7 +197,12 @@ class BridgeClient:
             if response is not None:
                 response.close()
 
-        result: dict[str, Any] = {"path": path, "mime_type": media_type, "size": len(content)}
+        result: dict[str, Any] = {
+            "path": path,
+            "mime_type": media_type,
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
         if media_type.startswith("text/") or media_type in {"application/json", "application/xml"}:
             result["text"] = content.decode("utf-8", errors="replace")
         else:

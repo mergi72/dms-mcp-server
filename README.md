@@ -117,7 +117,10 @@ Run the local web inspector to see every MCP request and response side by side:
 
 Then open `http://127.0.0.1:8780`. The inspector exposes only the five
 read-only tools and binds only to localhost. For `read_document`, it displays
-MIME type, byte size and SHA-256 while omitting document content.
+MIME type, byte size and SHA-256 of the original bytes while omitting document
+content. Switch between the raw `MCP Response` and a clickable `UI View` for
+connections, folders, files and metadata. Its API accepts only local
+Host/Origin values and JSON requests.
 
 Example MCP client configuration:
 
