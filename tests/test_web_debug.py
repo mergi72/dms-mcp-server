@@ -20,8 +20,21 @@ def test_validate_request_allows_bounded_search() -> None:
         {"tool": "search_items", "arguments": {"path": " edocat:/ ", "query": " steam ", "max_results": 12}}
     ) == (
         "search_items",
-        {"path": "edocat:/", "query": "steam", "max_results": 12},
+        {"path": "edocat:/", "query": "steam", "max_results": 12, "files_only": True},
     )
+
+
+def test_validate_request_allows_folders_in_search() -> None:
+    assert _validate_request(
+        {"tool": "search_items", "arguments": {"path": "edocat:/", "query": "steam", "files_only": False}}
+    )[1]["files_only"] is False
+
+
+def test_validate_request_rejects_non_boolean_files_only() -> None:
+    with pytest.raises(ValueError, match="files_only"):
+        _validate_request(
+            {"tool": "search_items", "arguments": {"path": "edocat:/", "query": "steam", "files_only": "yes"}}
+        )
 
 
 @pytest.mark.parametrize("max_results", [0, 101, True, "20"])

@@ -110,13 +110,36 @@ def test_search_items_forwards_general_contract_and_auth() -> None:
             "path": "alfresco:/projects",
             "query": "steam DN50",
             "max_results": 15,
+            "files_only": True,
             "auth": {"mode": "credentials", "username": "alice", "password": "secret"},
         }
-        return httpx.Response(200, json={"ok": True, "data": {"total": 0, "items": []}})
+        return httpx.Response(
+            200,
+            json={"ok": True, "data": {"total": 1, "items": [{"id": "1", "path": "/projects/steam.docx"}]}},
+        )
 
     bridge = BridgeClient(settings, broker, httpx.MockTransport(bridge_handler))
 
-    assert bridge.search_items("alfresco:/projects", " steam DN50 ", 15)["ok"] is True
+    result = bridge.search_items("alfresco:/projects", " steam DN50 ", 15)
+    assert result["ok"] is True
+    assert result["data"]["items"][0]["path"] == "alfresco:/projects/steam.docx"
+
+
+def test_search_items_forwards_folder_inclusion() -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+        assert json.loads(request.content)["files_only"] is False
+        return httpx.Response(200, json={"ok": True, "data": {"total": 0, "returned": 0, "items": []}})
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
+
+    assert bridge.search_items("alfresco:/", "steam", files_only=False)["ok"] is True
 
 
 @pytest.mark.parametrize("value", [0, 101, True, 1.5])

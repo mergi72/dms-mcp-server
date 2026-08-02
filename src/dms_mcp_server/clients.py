@@ -144,23 +144,35 @@ class BridgeClient:
             json={"path": path, "auth": self._auth_for_path(path)},
         )
 
-    def search_items(self, path: str, query: str, max_results: int = 20) -> dict[str, Any]:
+    def search_items(self, path: str, query: str, max_results: int = 20, files_only: bool = True) -> dict[str, Any]:
         self._ensure_compatible()
         if not isinstance(max_results, int) or isinstance(max_results, bool) or not 1 <= max_results <= 100:
             raise ValueError("max_results must be an integer between 1 and 100.")
         normalized_query = query.strip()
         if not normalized_query:
             raise ValueError("query must not be empty.")
-        return self._json(
+        if not isinstance(files_only, bool):
+            raise ValueError("files_only must be a boolean.")
+        payload = self._json(
             "POST",
             "/bridge/wfx/search",
             json={
                 "path": path,
                 "query": normalized_query,
                 "max_results": max_results,
+                "files_only": files_only,
                 "auth": self._auth_for_path(path),
             },
         )
+        connection_name = self._connection_name(path)
+        data = payload.get("data")
+        items = data.get("items") if isinstance(data, dict) else None
+        if connection_name and isinstance(items, list):
+            for item in items:
+                item_path = item.get("path") if isinstance(item, dict) else None
+                if isinstance(item_path, str) and item_path.startswith("/"):
+                    item["path"] = f"{connection_name}:{item_path}"
+        return payload
 
     def stat(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()

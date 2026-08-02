@@ -35,9 +35,9 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         return bridge.list_items(path)
 
     @mcp.tool()
-    def search_items(path: str, query: str, max_results: int = 20) -> dict:
-        """Search a connection natively below connection:/path; unsupported connections return an error."""
-        return bridge.search_items(path, query, max_results)
+    def search_items(path: str, query: str, max_results: int = 20, files_only: bool = True) -> dict:
+        """Search natively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only."""
+        return bridge.search_items(path, query, max_results, files_only)
 
     @mcp.tool()
     def get_item_info(path: str) -> dict:

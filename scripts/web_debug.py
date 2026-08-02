@@ -66,6 +66,7 @@ HTML = r"""<!doctype html>
   <div class="controls">
     <input id="path" value="alfresco:/" aria-label="DMS path">
     <input id="query" placeholder="Hledaný text" aria-label="Search query">
+    <label><input id="files-only" type="checkbox" checked> Pouze soubory</label>
     <button onclick="callTool('bridge_health', {})">Health</button>
     <button onclick="callTool('list_connections', {})">Connections</button>
     <button onclick="pathTool('list_items')">List</button>
@@ -93,7 +94,7 @@ const uiView = document.getElementById('ui-view');
 const statusView = document.getElementById('status');
 const pretty = value => JSON.stringify(value, null, 2);
 function pathTool(tool) { callTool(tool, {path: document.getElementById('path').value}); }
-function searchTool() { callTool('search_items', {path: document.getElementById('path').value, query: document.getElementById('query').value, max_results: 20}); }
+function searchTool() { callTool('search_items', {path: document.getElementById('path').value, query: document.getElementById('query').value, max_results: 20, files_only: document.getElementById('files-only').checked}); }
 function showView(view) {
   const showResponse = view === 'response';
   responseView.classList.toggle('hidden', !showResponse);
@@ -230,11 +231,14 @@ def _validate_request(payload: Any) -> tuple[str, dict[str, Any]]:
         if tool == "search_items":
             query = arguments.get("query")
             max_results = arguments.get("max_results", 20)
+            files_only = arguments.get("files_only", True)
             if not isinstance(query, str) or not query.strip():
                 raise ValueError("Search requires a non-empty query.")
             if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 100:
                 raise ValueError("max_results must be an integer between 1 and 100.")
-            arguments = {"path": path.strip(), "query": query.strip(), "max_results": max_results}
+            if not isinstance(files_only, bool):
+                raise ValueError("files_only must be a boolean.")
+            arguments = {"path": path.strip(), "query": query.strip(), "max_results": max_results, "files_only": files_only}
         else:
             arguments = {"path": path.strip()}
     else:
