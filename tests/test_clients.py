@@ -85,6 +85,50 @@ def test_root_listing_does_not_call_broker() -> None:
     assert bridge.list_items("/")["ok"] is True
 
 
+def test_search_items_forwards_general_contract_and_auth() -> None:
+    settings = _settings()
+    broker = BrokerClient(
+        settings,
+        httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={"ok": True, "auth": {"mode": "credentials", "username": "alice", "password": "secret"}},
+            )
+        ),
+    )
+
+    def bridge_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"auth": {"required": True, "credential_id": "company/dms"}}},
+            )
+        assert request.url.path == "/bridge/wfx/search"
+        assert json.loads(request.content) == {
+            "path": "alfresco:/projects",
+            "query": "steam DN50",
+            "max_results": 15,
+            "auth": {"mode": "credentials", "username": "alice", "password": "secret"},
+        }
+        return httpx.Response(200, json={"ok": True, "data": {"total": 0, "items": []}})
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(bridge_handler))
+
+    assert bridge.search_items("alfresco:/projects", " steam DN50 ", 15)["ok"] is True
+
+
+@pytest.mark.parametrize("value", [0, 101, True, 1.5])
+def test_search_items_rejects_invalid_limit(value: object) -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(lambda _request: _health_response()))
+
+    with pytest.raises(ValueError, match="max_results"):
+        bridge.search_items("alfresco:/", "query", value)  # type: ignore[arg-type]
+
+
 def test_read_text_document() -> None:
     settings = _settings(max_document_bytes=100)
     broker = BrokerClient(

@@ -23,7 +23,7 @@ from scripts.run_live_smoke import _call_json
 from dms_mcp_server.config import load_settings
 
 
-ALLOWED_TOOLS = {"bridge_health", "list_connections", "list_items", "get_item_info", "read_document"}
+ALLOWED_TOOLS = {"bridge_health", "list_connections", "list_items", "search_items", "get_item_info", "read_document"}
 
 
 HTML = r"""<!doctype html>
@@ -65,9 +65,11 @@ HTML = r"""<!doctype html>
 <main>
   <div class="controls">
     <input id="path" value="alfresco:/" aria-label="DMS path">
+    <input id="query" placeholder="Hledaný text" aria-label="Search query">
     <button onclick="callTool('bridge_health', {})">Health</button>
     <button onclick="callTool('list_connections', {})">Connections</button>
     <button onclick="pathTool('list_items')">List</button>
+    <button onclick="searchTool()">Search</button>
     <button onclick="pathTool('get_item_info')">Info</button>
     <button onclick="pathTool('read_document')">Verify document</button>
   </div>
@@ -91,6 +93,7 @@ const uiView = document.getElementById('ui-view');
 const statusView = document.getElementById('status');
 const pretty = value => JSON.stringify(value, null, 2);
 function pathTool(tool) { callTool(tool, {path: document.getElementById('path').value}); }
+function searchTool() { callTool('search_items', {path: document.getElementById('path').value, query: document.getElementById('query').value, max_results: 20}); }
 function showView(view) {
   const showResponse = view === 'response';
   responseView.classList.toggle('hidden', !showResponse);
@@ -144,6 +147,13 @@ function renderUI(tool, payload, request) {
     entries.forEach(item => items.append(itemButton(item.name || '<unnamed>', joinedPath(request.arguments.path, item.name || ''), item.is_folder === true)));
     if (!entries.length) items.textContent = 'Složka je prázdná.';
     uiView.append(items); return;
+  }
+  if (tool === 'search_items') {
+    const entries = result.data?.items || [];
+    const items = document.createElement('div'); items.className = 'items';
+    entries.forEach(item => items.append(itemButton(item.name || '<unnamed>', `${request.arguments.path.split(':/')[0]}:${item.path}`, item.is_folder === true)));
+    if (!entries.length) items.textContent = 'Nenalezeny žádné položky.';
+    uiView.append(valueCard({query: result.data?.query, total: result.data?.total, truncated: result.data?.truncated}), items); return;
   }
   if (tool === 'read_document') {
     uiView.append(valueCard({path: result.path, mime_type: result.mime_type, size: result.size, sha256: result.sha256, content_omitted: result.content_omitted})); return;
@@ -213,11 +223,20 @@ def _validate_request(payload: Any) -> tuple[str, dict[str, Any]]:
         raise ValueError("Unknown or non-read-only MCP tool.")
     if not isinstance(arguments, dict):
         raise ValueError("arguments must be a JSON object.")
-    if tool in {"list_items", "get_item_info", "read_document"}:
+    if tool in {"list_items", "get_item_info", "read_document", "search_items"}:
         path = arguments.get("path")
         if not isinstance(path, str) or not path.strip():
             raise ValueError("This tool requires a non-empty path.")
-        arguments = {"path": path.strip()}
+        if tool == "search_items":
+            query = arguments.get("query")
+            max_results = arguments.get("max_results", 20)
+            if not isinstance(query, str) or not query.strip():
+                raise ValueError("Search requires a non-empty query.")
+            if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 100:
+                raise ValueError("max_results must be an integer between 1 and 100.")
+            arguments = {"path": path.strip(), "query": query.strip(), "max_results": max_results}
+        else:
+            arguments = {"path": path.strip()}
     else:
         arguments = {}
     return tool, arguments

@@ -35,6 +35,11 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         return bridge.list_items(path)
 
     @mcp.tool()
+    def search_items(path: str, query: str, max_results: int = 20) -> dict:
+        """Search a connection natively below connection:/path; unsupported connections return an error."""
+        return bridge.search_items(path, query, max_results)
+
+    @mcp.tool()
     def get_item_info(path: str) -> dict:
         """Return metadata for one file or folder at connection:/path."""
         return bridge.stat(path)

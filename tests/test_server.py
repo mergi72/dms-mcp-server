@@ -20,6 +20,7 @@ def test_server_registers_only_expected_read_only_tools() -> None:
         "bridge_health",
         "list_connections",
         "list_items",
+        "search_items",
         "get_item_info",
         "read_document",
     }

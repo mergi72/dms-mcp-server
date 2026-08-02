@@ -15,6 +15,23 @@ def test_validate_request_allows_read_only_path_tool() -> None:
     )
 
 
+def test_validate_request_allows_bounded_search() -> None:
+    assert _validate_request(
+        {"tool": "search_items", "arguments": {"path": " edocat:/ ", "query": " steam ", "max_results": 12}}
+    ) == (
+        "search_items",
+        {"path": "edocat:/", "query": "steam", "max_results": 12},
+    )
+
+
+@pytest.mark.parametrize("max_results", [0, 101, True, "20"])
+def test_validate_request_rejects_invalid_search_limit(max_results: object) -> None:
+    with pytest.raises(ValueError, match="max_results"):
+        _validate_request(
+            {"tool": "search_items", "arguments": {"path": "edocat:/", "query": "steam", "max_results": max_results}}
+        )
+
+
 def test_validate_request_rejects_unknown_tool() -> None:
     with pytest.raises(ValueError, match="non-read-only"):
         _validate_request({"tool": "delete_item", "arguments": {"path": "alfresco:/x"}})
@@ -80,3 +97,8 @@ def test_html_offers_response_and_ui_views() -> None:
 def test_html_offers_parent_folder_navigation() -> None:
     assert "function parentPath(path)" in HTML
     assert "itemButton('..', parent, true)" in HTML
+
+
+def test_html_offers_native_search() -> None:
+    assert 'onclick="searchTool()"' in HTML
+    assert "callTool('search_items'" in HTML

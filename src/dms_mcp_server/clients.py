@@ -144,6 +144,24 @@ class BridgeClient:
             json={"path": path, "auth": self._auth_for_path(path)},
         )
 
+    def search_items(self, path: str, query: str, max_results: int = 20) -> dict[str, Any]:
+        self._ensure_compatible()
+        if not isinstance(max_results, int) or isinstance(max_results, bool) or not 1 <= max_results <= 100:
+            raise ValueError("max_results must be an integer between 1 and 100.")
+        normalized_query = query.strip()
+        if not normalized_query:
+            raise ValueError("query must not be empty.")
+        return self._json(
+            "POST",
+            "/bridge/wfx/search",
+            json={
+                "path": path,
+                "query": normalized_query,
+                "max_results": max_results,
+                "auth": self._auth_for_path(path),
+            },
+        )
+
     def stat(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()
         return self._json(

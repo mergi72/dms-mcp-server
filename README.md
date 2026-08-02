@@ -14,6 +14,7 @@ directly.
 - `bridge_health`
 - `list_connections`
 - `list_items`
+- `search_items`
 - `get_item_info`
 - `read_document`
 
@@ -93,7 +94,7 @@ Run the read-only live smoke test while bridge and broker are running:
 .\.venv\Scripts\python.exe scripts\run_live_smoke.py alfresco edocat
 ```
 
-The smoke test exercises all read-only tools. It prints document metadata,
+The smoke test exercises the original browsing and document tools. It prints document metadata,
 size and SHA-256 only; document content is never printed.
 
 Display a bounded tree of DMS folders and files through the MCP server:
@@ -122,7 +123,8 @@ Run the local web inspector to see every MCP request and response side by side:
 Then open the address configured by `inspector.host` and `inspector.port` in
 `config/mcp.json` (default `http://127.0.0.1:8780`). Command-line `--host` and
 `--port` values may temporarily override the JSON configuration. The inspector
-exposes only the five read-only tools and binds only to localhost. For
+exposes only the six read-only tools and binds only to localhost. Its Search
+control calls native provider search below the selected DMS path. For
 `read_document`, it displays
 MIME type, byte size and SHA-256 of the original bytes while omitting document
 content. Switch between the raw `MCP Response` and a clickable `UI View` for
