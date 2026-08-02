@@ -152,6 +152,118 @@ def test_search_items_rejects_invalid_limit(value: object) -> None:
         bridge.search_items("alfresco:/", "query", value)  # type: ignore[arg-type]
 
 
+def test_open_share_url_resolves_stats_and_lists_folder() -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/health":
+            return _health_response()
+        if request.url.path == "/bridge/wfx/resolve-share-url":
+            assert json.loads(request.content) == {
+                "share_url": "https://dms.example/share/page/#/Shared/Documents",
+                "connection": "alfresco",
+            }
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"connection": "alfresco", "path": "alfresco:/Shared/Documents"}},
+            )
+        if request.url.path == "/bridge/wfx/connections":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"connections": [{"name": "alfresco", "driver": "alfresco", "registered": True}]}},
+            )
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"driver": "alfresco", "auth": {"required": False}}},
+            )
+        body = json.loads(request.content)
+        assert body == {"path": "alfresco:/Shared/Documents", "auth": None}
+        if request.url.path == "/bridge/wfx/stat":
+            return httpx.Response(200, json={"ok": True, "data": {"name": "Documents", "is_folder": True}})
+        if request.url.path == "/bridge/wfx/list":
+            return httpx.Response(200, json={"ok": True, "data": {"total": 1, "items": [{"name": "report.pdf"}]}})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
+
+    result = bridge.open_share_url(" https://dms.example/share/page/#/Shared/Documents ")
+
+    assert result["data"]["resolved"]["path"] == "alfresco:/Shared/Documents"
+    assert result["data"]["item"]["is_folder"] is True
+    assert result["data"]["listing"]["items"][0]["name"] == "report.pdf"
+    assert ("POST", "/bridge/wfx/list") in requests
+
+
+def test_open_share_url_auto_selects_edocat_for_dir_link() -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.url.path == "/bridge/wfx/connections":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"connections": [{"name": "edocat", "driver": "edocat", "registered": True}]}},
+            )
+        if request.url.path == "/bridge/wfx/resolve-share-url":
+            assert json.loads(request.content)["connection"] == "edocat"
+            return httpx.Response(200, json={"ok": True, "data": {"path": "edocat:/Shared"}})
+        if request.url.path == "/bridge/wfx/connections/edocat":
+            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+        if request.url.path == "/bridge/wfx/stat":
+            return httpx.Response(200, json={"ok": True, "data": {"name": "Shared", "is_folder": False}})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
+
+    result = bridge.open_share_url("https://edocat.example/share/page/browse/DIR-250566")
+
+    assert result["data"]["requested_connection"] == "edocat"
+
+
+def test_open_share_url_uses_edocat_connection_directly() -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.url.path == "/bridge/wfx/resolve-share-url":
+            assert json.loads(request.content)["connection"] == "edocat"
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"connection": "edocat", "path": "edocat:/Shared/report.pdf"}},
+            )
+        if request.url.path == "/bridge/wfx/connections/edocat":
+            return httpx.Response(200, json={"ok": True, "data": {"driver": "edocat", "auth": {"required": False}}})
+        if request.url.path == "/bridge/wfx/stat":
+            return httpx.Response(200, json={"ok": True, "data": {"name": "report.pdf", "is_folder": False}})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
+
+    result = bridge.open_share_url("https://edocat.example/share/page/browse/DIR-1", "edocat")
+
+    assert result["data"]["requested_connection"] == "edocat"
+    assert result["data"]["resolved"]["path"] == "edocat:/Shared/report.pdf"
+    assert result["data"]["listing"] is None
+
+
+@pytest.mark.parametrize("share_url", ["", "not-a-url", "file:///tmp/item"])
+def test_open_share_url_rejects_invalid_url(share_url: str) -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(lambda _request: _health_response()))
+
+    with pytest.raises(ValueError, match="share_url"):
+        bridge.open_share_url(share_url)
+
+
 def test_read_text_document() -> None:
     settings = _settings(max_document_bytes=100)
     broker = BrokerClient(

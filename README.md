@@ -15,11 +15,17 @@ directly.
 - `list_connections`
 - `list_items`
 - `search_items`
+- `open_share_url`
 - `get_item_info`
 - `read_document`
 
 All DMS paths use `connection:/path`. The server intentionally has no upload,
 move, copy, mkdir or delete tools.
+
+`open_share_url` accepts an Alfresco-compatible shared URL, resolves its exact
+`connection:/path`, returns item metadata and lists the contents when the URL
+targets a folder. eDoCat `DIR-...` links are resolved through their same-host
+redirect to the underlying Alfresco document-library path.
 
 ## Architecture
 
@@ -123,7 +129,9 @@ Run the local web inspector to see every MCP request and response side by side:
 Then open the address configured by `inspector.host` and `inspector.port` in
 `config/mcp.json` (default `http://127.0.0.1:8780`). Command-line `--host` and
 `--port` values may temporarily override the JSON configuration. The inspector
-exposes only the six read-only tools and binds only to localhost. Its Search
+exposes the original six browsing and document tools and binds only to localhost;
+`open_share_url` remains available to MCP clients without adding another
+diagnostic UI control. Its Search
 control calls native provider search below the selected DMS path. For
 `read_document`, it displays
 MIME type, byte size and SHA-256 of the original bytes while omitting document

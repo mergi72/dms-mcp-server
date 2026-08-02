@@ -40,6 +40,11 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         return bridge.search_items(path, query, max_results, files_only)
 
     @mcp.tool()
+    def open_share_url(share_url: str, connection: str = "auto") -> dict:
+        """Open an Alfresco or eDoCat DMS share URL read-only. Resolve its exact path, return item metadata, and list contents when it targets a folder."""
+        return bridge.open_share_url(share_url, connection)
+
+    @mcp.tool()
     def get_item_info(path: str) -> dict:
         """Return metadata for one file or folder at connection:/path."""
         return bridge.stat(path)

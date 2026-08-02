@@ -174,6 +174,62 @@ class BridgeClient:
                     item["path"] = f"{connection_name}:{item_path}"
         return payload
 
+    def open_share_url(self, share_url: str, connection: str = "auto") -> dict[str, Any]:
+        self._ensure_compatible()
+        normalized_url = share_url.strip()
+        if not normalized_url or len(normalized_url) > 4096:
+            raise ValueError("share_url must be a non-empty URL up to 4096 characters.")
+        try:
+            parsed_url = httpx.URL(normalized_url)
+        except Exception as exc:
+            raise ValueError("share_url must be a valid HTTP or HTTPS URL.") from exc
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.host:
+            raise ValueError("share_url must be a valid HTTP or HTTPS URL.")
+
+        normalized_connection = connection.strip().rstrip(":/")
+        if normalized_connection.casefold() == "auto":
+            driver = "edocat" if parsed_url.path.startswith("/share/page/browse/DIR-") else "alfresco"
+            registry_payload = self.list_connections().get("data")
+            registered = registry_payload.get("connections") if isinstance(registry_payload, dict) else None
+            normalized_connection = next(
+                (
+                    str(item["name"])
+                    for item in registered
+                    if isinstance(item, dict)
+                    and str(item.get("driver") or "").casefold() == driver
+                    and item.get("registered") is True
+                    and isinstance(item.get("name"), str)
+                ),
+                "",
+            ) if isinstance(registered, list) else ""
+            if not normalized_connection:
+                raise UpstreamError(f"No registered {driver} connection is available for this Share URL.")
+        if not normalized_connection or any(character in normalized_connection for character in "\\/"):
+            raise ValueError("connection must be a connection name, not a path.")
+
+        resolved = self._json(
+            "POST",
+            "/bridge/wfx/resolve-share-url",
+            json={"share_url": normalized_url, "connection": normalized_connection},
+        )
+        resolved_data = resolved.get("data")
+        resolved_path = resolved_data.get("path") if isinstance(resolved_data, dict) else None
+        if not isinstance(resolved_path, str) or not resolved_path.strip():
+            raise UpstreamError("DMS Provider Bridge did not return a resolved share URL path.")
+
+        item_response = self.stat(resolved_path)
+        item = item_response.get("data")
+        listing = self.list_items(resolved_path).get("data") if isinstance(item, dict) and item.get("is_folder") is True else None
+        return {
+            "ok": True,
+            "data": {
+                "resolved": resolved_data,
+                "requested_connection": normalized_connection,
+                "item": item,
+                "listing": listing,
+            },
+        }
+
     def stat(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()
         return self._json(
