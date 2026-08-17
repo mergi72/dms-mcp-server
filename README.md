@@ -30,7 +30,7 @@ redirect to the underlying Alfresco document-library path.
 ## Architecture
 
 ```text
-MCP client --stdio--> dms-mcp-server --HTTP--> dms-provider-bridge --> DMS
+MCP client --HTTP--> dms-mcp-server --HTTP--> dms-provider-bridge --> DMS
                             |
                             +----------HTTP--> credential-broker
 ```
@@ -50,6 +50,7 @@ Runtime data lives in `config/mcp.json`, separately from application code:
     "minimumVersion": "0.2.0"
   },
   "broker": { "url": "http://127.0.0.1:8776" },
+  "server": { "host": "127.0.0.1", "port": 8781, "path": "/mcp" },
   "runtime": {
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576
@@ -69,6 +70,9 @@ Environment variables remain available as final runtime overrides:
 | --- | --- | --- |
 | `DMS_BRIDGE_URL` | `http://127.0.0.1:8765` | Local bridge URL |
 | `DMS_BROKER_URL` | `http://127.0.0.1:8776` | Local broker URL |
+| `DMS_MCP_SERVER_HOST` | `127.0.0.1` | MCP service bind address |
+| `DMS_MCP_SERVER_PORT` | `8781` | MCP service port |
+| `DMS_MCP_SERVER_PATH` | `/mcp` | Streamable HTTP endpoint path |
 | `DMS_MCP_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout |
 | `DMS_MCP_MAX_DOCUMENT_BYTES` | `1048576` | Maximum document returned to MCP |
 | `DMS_MCP_MIN_BRIDGE_VERSION` | `0.2.0` | Minimum compatible bridge version |
@@ -88,11 +92,14 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Run the stdio server:
+Run the MCP HTTP service:
 
 ```powershell
 .\.venv\Scripts\dms-mcp-server.exe
 ```
+
+The default endpoint is `http://127.0.0.1:8781/mcp`. Diagnostic scripts invoke
+the same executable with the explicit `--stdio` compatibility switch.
 
 Run the read-only live smoke test while bridge and broker are running:
 
@@ -140,18 +147,12 @@ connections, folders, files and metadata; `..` navigates to the parent folder.
 Its API accepts only local
 Host/Origin values and JSON requests.
 
-Example MCP client configuration:
+Example HTTP MCP client configuration:
 
 ```json
 {
   "mcpServers": {
-    "dms": {
-      "command": "C:\\Users\\YOUR_USER\\python_projects\\dms-mcp-server\\.venv\\Scripts\\dms-mcp-server.exe",
-      "env": {
-        "DMS_BRIDGE_URL": "http://127.0.0.1:8765",
-        "DMS_BROKER_URL": "http://127.0.0.1:8776"
-      }
-    }
+    "dms": { "url": "http://127.0.0.1:8781/mcp" }
   }
 }
 ```

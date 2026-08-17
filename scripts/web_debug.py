@@ -249,7 +249,7 @@ def _validate_request(payload: Any) -> tuple[str, dict[str, Any]]:
 async def _invoke(server: Path, timeout: float, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     params = StdioServerParameters(
         command=str(server.resolve()),
-        args=[],
+        args=["--stdio"],
         cwd=str(PROJECT_ROOT),
         env={**os.environ, "DMS_MCP_TIMEOUT_SECONDS": str(timeout)},
     )

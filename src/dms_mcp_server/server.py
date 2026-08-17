@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+
 from mcp.server.fastmcp import FastMCP
 
 from dms_mcp_server.clients import BridgeClient, BrokerClient
@@ -16,6 +18,9 @@ def create_server(settings: Settings | None = None) -> FastMCP:
             "Read-only access to DMS connections through DMS Provider Bridge. "
             "Paths use the connection:/path format."
         ),
+        host=active_settings.server_host,
+        port=active_settings.server_port,
+        streamable_http_path=active_settings.server_path,
         json_response=True,
     )
 
@@ -58,7 +63,10 @@ def create_server(settings: Settings | None = None) -> FastMCP:
 
 
 def main() -> None:
-    create_server().run(transport="stdio")
+    parser = argparse.ArgumentParser(description="Read-only DMS MCP server.")
+    parser.add_argument("--stdio", action="store_true", help="Use stdio for legacy diagnostic scripts.")
+    args = parser.parse_args()
+    create_server().run(transport="stdio" if args.stdio else "streamable-http")
 
 
 if __name__ == "__main__":

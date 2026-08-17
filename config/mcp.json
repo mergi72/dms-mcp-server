@@ -6,6 +6,11 @@
   "broker": {
     "url": "http://127.0.0.1:8776"
   },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8781,
+    "path": "/mcp"
+  },
   "inspector": {
     "host": "127.0.0.1",
     "port": 8780

@@ -92,7 +92,7 @@ async def run(args: argparse.Namespace) -> None:
     executable = Path(args.server).resolve()
     params = StdioServerParameters(
         command=str(executable),
-        args=[],
+        args=["--stdio"],
         cwd=str(executable.parent.parent.parent),
         env={**os.environ, "DMS_MCP_TIMEOUT_SECONDS": str(args.timeout)},
     )

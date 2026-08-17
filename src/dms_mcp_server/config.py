@@ -65,6 +65,9 @@ class Settings:
     timeout_seconds: float
     max_document_bytes: int
     minimum_bridge_version: str
+    server_host: str = "127.0.0.1"
+    server_port: int = 8781
+    server_path: str = "/mcp"
     inspector_host: str = "127.0.0.1"
     inspector_port: int = 8780
 
@@ -92,10 +95,11 @@ def load_settings(
 
     bridge = payload.get("bridge")
     broker = payload.get("broker")
+    server = payload.get("server")
     inspector = payload.get("inspector")
     runtime = payload.get("runtime")
-    if not all(isinstance(section, dict) for section in (bridge, broker, inspector, runtime)):
-        raise ValueError("Configuration requires bridge, broker, inspector and runtime JSON objects.")
+    if not all(isinstance(section, dict) for section in (bridge, broker, server, inspector, runtime)):
+        raise ValueError("Configuration requires bridge, broker, server, inspector and runtime JSON objects.")
 
     bridge_url = os.getenv("DMS_BRIDGE_URL") or _required_string(bridge, "url", "bridge")
     minimum_bridge_version = os.getenv("DMS_MCP_MIN_BRIDGE_VERSION") or _required_string(
@@ -104,6 +108,9 @@ def load_settings(
     broker_url = os.getenv("DMS_BROKER_URL") or _required_string(broker, "url", "broker")
     timeout = os.getenv("DMS_MCP_TIMEOUT_SECONDS", runtime.get("timeoutSeconds"))
     max_bytes = os.getenv("DMS_MCP_MAX_DOCUMENT_BYTES", runtime.get("maxDocumentBytes"))
+    server_path = os.getenv("DMS_MCP_SERVER_PATH") or _required_string(server, "path", "server")
+    if not server_path.startswith("/"):
+        raise ValueError("server.path must start with '/'.")
     return Settings(
         bridge_url=bridge_url.rstrip("/"),
         broker_url=broker_url.rstrip("/"),
@@ -114,4 +121,7 @@ def load_settings(
         timeout_seconds=_positive_float(timeout, "runtime.timeoutSeconds"),
         max_document_bytes=_positive_int(max_bytes, "runtime.maxDocumentBytes"),
         minimum_bridge_version=minimum_bridge_version,
+        server_host=os.getenv("DMS_MCP_SERVER_HOST") or _required_string(server, "host", "server"),
+        server_port=_positive_int(os.getenv("DMS_MCP_SERVER_PORT", server.get("port")), "server.port"),
+        server_path=server_path,
     )
