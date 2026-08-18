@@ -84,6 +84,31 @@ class BridgeClient:
         normalized = name.strip()
         return normalized or None
 
+    @staticmethod
+    def _public_search_path(
+        mount: str,
+        search_root: str,
+        item_path: str,
+        root_names: set[str],
+    ) -> str | None:
+        segments = [segment for segment in item_path.replace("\\", "/").split("/") if segment]
+        root_segments = [segment for segment in search_root.replace("\\", "/").split("/") if segment]
+        start: int | None = None
+        if root_segments:
+            folded = [segment.casefold() for segment in segments]
+            anchor = [segment.casefold() for segment in root_segments]
+            for index in range(len(segments) - len(anchor) + 1):
+                if folded[index : index + len(anchor)] == anchor:
+                    start = index
+                    break
+        else:
+            names = {name.casefold() for name in root_names}
+            start = next((index for index, segment in enumerate(segments) if segment.casefold() in names), None)
+        if start is None:
+            return None
+        relative = "/" + "/".join(segments[start:])
+        return f"{mount.rstrip('/')}{relative}"
+
     def connection_detail(self, connection_name: str) -> dict[str, Any]:
         encoded_name = quote(connection_name.strip(), safe="")
         return self._json("GET", f"/bridge/wfx/connections/{encoded_name}")
@@ -153,6 +178,7 @@ class BridgeClient:
             raise ValueError("query must not be empty.")
         if not isinstance(files_only, bool):
             raise ValueError("files_only must be a boolean.")
+        auth = self._auth_for_path(path)
         payload = self._json(
             "POST",
             "/bridge/wfx/search",
@@ -161,17 +187,43 @@ class BridgeClient:
                 "query": normalized_query,
                 "max_results": max_results,
                 "files_only": files_only,
-                "auth": self._auth_for_path(path),
+                "auth": auth,
             },
         )
         connection_name = self._connection_name(path)
         data = payload.get("data")
         items = data.get("items") if isinstance(data, dict) else None
         if connection_name and isinstance(items, list):
+            detail_data = self.connection_detail(connection_name).get("data")
+            mount = detail_data.get("mount") if isinstance(detail_data, dict) else None
+            if not isinstance(mount, str) or not mount.endswith(":/"):
+                raise UpstreamError(f"Connection {connection_name!r} has no valid mount in bridge.")
+            search_root = data.get("path") if isinstance(data.get("path"), str) else path.partition(":")[2]
+            search_root = search_root or "/"
+            root_names: set[str] = set()
+            if search_root == "/":
+                root_payload = self._json(
+                    "POST",
+                    "/bridge/wfx/list",
+                    json={"path": mount, "auth": auth},
+                )
+                root_data = root_payload.get("data")
+                root_items = root_data.get("items") if isinstance(root_data, dict) else None
+                if isinstance(root_items, list):
+                    root_names = {
+                        str(item["name"])
+                        for item in root_items
+                        if isinstance(item, dict) and isinstance(item.get("name"), str)
+                    }
             for item in items:
                 item_path = item.get("path") if isinstance(item, dict) else None
                 if isinstance(item_path, str) and item_path.startswith("/"):
-                    item["path"] = f"{connection_name}:{item_path}"
+                    public_path = self._public_search_path(mount, search_root, item_path, root_names)
+                    if public_path is None:
+                        item.pop("path", None)
+                        item["path_unresolved"] = True
+                    else:
+                        item["path"] = public_path
         return payload
 
     def open_share_url(self, share_url: str, connection: str = "auto") -> dict[str, Any]:

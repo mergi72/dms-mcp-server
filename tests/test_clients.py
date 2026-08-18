@@ -103,7 +103,7 @@ def test_search_items_forwards_general_contract_and_auth() -> None:
         if request.method == "GET":
             return httpx.Response(
                 200,
-                json={"ok": True, "data": {"auth": {"required": True, "credential_id": "company/dms"}}},
+                json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": True, "credential_id": "company/dms"}}},
             )
         assert request.url.path == "/bridge/wfx/search"
         assert json.loads(request.content) == {
@@ -133,13 +133,71 @@ def test_search_items_forwards_folder_inclusion() -> None:
         if request.url.path == "/health":
             return _health_response()
         if request.method == "GET":
-            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+            return httpx.Response(200, json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}})
+        if request.url.path == "/bridge/wfx/list":
+            return httpx.Response(200, json={"ok": True, "data": {"items": []}})
         assert json.loads(request.content)["files_only"] is False
         return httpx.Response(200, json={"ok": True, "data": {"total": 0, "returned": 0, "items": []}})
 
     bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
 
     assert bridge.search_items("alfresco:/", "steam", files_only=False)["ok"] is True
+
+
+def test_search_items_returns_connection_path_below_document_library() -> None:
+    settings = _settings()
+    broker = BrokerClient(settings, httpx.MockTransport(lambda _request: httpx.Response(500)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(200, json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}})
+        if request.url.path == "/bridge/wfx/list":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"items": [{"name": "03 zakázky v realizaci"}]}},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "data": {
+                    "items": [
+                        {
+                            "id": "1",
+                            "path": "/Agenda společnosti/Stránky/deals/documentLibrary/03 zakázky v realizaci/22 080 - UNI_Novy odolejovac bl. 68",
+                        }
+                    ]
+                },
+            },
+        )
+
+    bridge = BridgeClient(settings, broker, httpx.MockTransport(handler))
+
+    result = bridge.search_items("alfresco:/", "22080")
+
+    assert result["data"]["items"][0]["path"] == (
+        "alfresco:/03 zakázky v realizaci/22 080 - UNI_Novy odolejovac bl. 68"
+    )
+
+
+def test_public_search_path_uses_connection_contract_without_provider_markers() -> None:
+    assert BridgeClient._public_search_path(
+        "firma-dms:/",
+        "/",
+        "/private/upstream/root/Projects/Contract.docx",
+        {"Projects"},
+    ) == "firma-dms:/Projects/Contract.docx"
+
+
+def test_public_search_path_refuses_unmatched_internal_path() -> None:
+    assert BridgeClient._public_search_path(
+        "alfresco:/",
+        "/",
+        "/private/upstream/root/unknown.docx",
+        {"Projects"},
+    ) is None
 
 
 @pytest.mark.parametrize("value", [0, 101, True, 1.5])
