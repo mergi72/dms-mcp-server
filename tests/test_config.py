@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from dms_mcp_server.config import load_settings
+from dms_mcp_server.paths import PROJECT_CONFIG_DIR, USER_CONFIG_DIR, _distributed_config_dir
 
 
 def _write_config(directory: Path, name: str, payload: dict) -> None:
@@ -73,3 +74,20 @@ def test_environment_overrides_json(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 def test_missing_machine_config_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="mcp.json"):
         load_settings(tmp_path / "missing", tmp_path / "user")
+
+
+def test_source_tree_uses_project_default_config() -> None:
+    assert PROJECT_CONFIG_DIR.name == "config"
+    assert (PROJECT_CONFIG_DIR / "mcp.json").is_file()
+    assert _distributed_config_dir() == PROJECT_CONFIG_DIR
+
+
+def test_default_user_config_is_below_appdata(monkeypatch: pytest.MonkeyPatch) -> None:
+    appdata = Path.home() / "AppData" / "Roaming"
+    monkeypatch.setenv("APPDATA", str(appdata))
+
+    from dms_mcp_server.paths import _user_config_dir
+
+    assert _user_config_dir() == appdata / "DMS MCP" / "config"
+    if USER_CONFIG_DIR is not None:
+        assert USER_CONFIG_DIR.name == "config"

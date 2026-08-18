@@ -64,6 +64,23 @@ merged over that base. Set
 `DMS_MCP_MACHINE_CONFIG_DIR` or `DMS_MCP_USER_CONFIG_DIR` to use other config
 directories.
 
+The distributed application keeps `config/mcp.json` beside the application,
+not inside the Python package. A packaged executable therefore has this
+layout:
+
+```text
+dms-mcp-server/
+|-- dms-mcp-server.exe
+`-- config/
+    `-- mcp.json
+```
+
+User overrides in `%APPDATA%\\DMS MCP\\config\\mcp.local.json` are merged on
+top of that default. Environment variables have the highest priority. A wheel
+is only an installer input: a bare `pip install` is not a complete application
+deployment unless the installer also places `config/mcp.json` beside the
+application or sets `DMS_MCP_MACHINE_CONFIG_DIR`.
+
 Environment variables remain available as final runtime overrides:
 
 | Variable | Default | Purpose |
