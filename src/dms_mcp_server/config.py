@@ -61,7 +61,6 @@ def _positive_int(value: object, location: str) -> int:
 @dataclass(frozen=True, slots=True)
 class Settings:
     bridge_url: str
-    broker_url: str
     timeout_seconds: float
     max_document_bytes: int
     minimum_bridge_version: str
@@ -96,13 +95,12 @@ def load_settings(
             payload = _merge_dicts(payload, local_payload)
 
     bridge = payload.get("bridge")
-    broker = payload.get("broker")
     server = payload.get("server")
     inspector = payload.get("inspector")
     runtime = payload.get("runtime")
     debug = payload.get("debug", {})
-    if not all(isinstance(section, dict) for section in (bridge, broker, server, inspector, runtime)):
-        raise ValueError("Configuration requires bridge, broker, server, inspector and runtime JSON objects.")
+    if not all(isinstance(section, dict) for section in (bridge, server, inspector, runtime)):
+        raise ValueError("Configuration requires bridge, server, inspector and runtime JSON objects.")
     if not isinstance(debug, dict):
         raise ValueError("Configuration debug must be a JSON object.")
 
@@ -117,7 +115,6 @@ def load_settings(
     minimum_bridge_version = os.getenv("DMS_MCP_MIN_BRIDGE_VERSION") or _required_string(
         bridge, "minimumVersion", "bridge"
     )
-    broker_url = os.getenv("DMS_BROKER_URL") or _required_string(broker, "url", "broker")
     timeout = os.getenv("DMS_MCP_TIMEOUT_SECONDS", runtime.get("timeoutSeconds"))
     max_bytes = os.getenv("DMS_MCP_MAX_DOCUMENT_BYTES", runtime.get("maxDocumentBytes"))
     server_path = os.getenv("DMS_MCP_SERVER_PATH") or _required_string(server, "path", "server")
@@ -125,7 +122,6 @@ def load_settings(
         raise ValueError("server.path must start with '/'.")
     return Settings(
         bridge_url=bridge_url.rstrip("/"),
-        broker_url=broker_url.rstrip("/"),
         inspector_host=os.getenv("DMS_MCP_INSPECTOR_HOST") or _required_string(inspector, "host", "inspector"),
         inspector_port=_positive_int(
             os.getenv("DMS_MCP_INSPECTOR_PORT", inspector.get("port")), "inspector.port"

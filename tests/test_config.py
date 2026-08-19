@@ -17,7 +17,6 @@ def _write_config(directory: Path, name: str, payload: dict) -> None:
 def _base_config() -> dict:
     return {
         "bridge": {"url": "http://127.0.0.1:8765", "minimumVersion": "0.2.0"},
-        "broker": {"url": "http://127.0.0.1:8776"},
         "server": {"host": "127.0.0.1", "port": 8781, "path": "/mcp"},
         "inspector": {"host": "127.0.0.1", "port": 8780},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
@@ -32,7 +31,6 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     settings = load_settings(machine_dir, tmp_path / "missing-user")
 
     assert settings.bridge_url == "http://127.0.0.1:8765"
-    assert settings.broker_url == "http://127.0.0.1:8776"
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8781
     assert settings.server_path == "/mcp"
@@ -68,7 +66,6 @@ def test_user_local_json_overrides_machine_config(tmp_path: Path) -> None:
     settings = load_settings(machine_dir, user_dir)
 
     assert settings.bridge_url == "http://127.0.0.1:9000"
-    assert settings.broker_url == "http://127.0.0.1:8776"
     assert settings.timeout_seconds == 12
 
 

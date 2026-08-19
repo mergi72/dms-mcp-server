@@ -10,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from dms_mcp_server import __version__
-from dms_mcp_server.clients import BridgeClient, BrokerClient
+from dms_mcp_server.clients import BridgeClient
 from dms_mcp_server.config import Settings, load_settings
 from dms_mcp_server.logging_config import configure_logging
 from dms_mcp_server.tracing import CORRELATION_HEADER, correlation_scope
@@ -47,8 +47,7 @@ def _run_tool(name: str, operation: Callable[[], dict], correlation_id: str | No
 
 def create_server(settings: Settings | None = None) -> FastMCP:
     active_settings = settings or load_settings()
-    broker = BrokerClient(active_settings)
-    bridge = BridgeClient(active_settings, broker)
+    bridge = BridgeClient(active_settings)
     mcp = FastMCP(
         "DMS",
         instructions=(

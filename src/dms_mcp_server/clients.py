@@ -13,50 +13,16 @@ from dms_mcp_server.tracing import current_correlation_headers
 
 
 class UpstreamError(RuntimeError):
-    """A local bridge or broker request failed."""
-
-
-class BrokerClient:
-    def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None) -> None:
-        self._client = httpx.Client(
-            base_url=settings.broker_url,
-            timeout=settings.timeout_seconds,
-            transport=transport,
-            trust_env=False,
-            headers={"X-VFS-Component": "mcp"},
-        )
-
-    def resolve(self, credential_id: str) -> dict[str, Any]:
-        try:
-            response = self._client.post(
-                "/credentials/resolve",
-                json={"auth": {"mode": "windows", "target": credential_id, "required": True}},
-                headers=current_correlation_headers(),
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise UpstreamError(f"Credential Broker request failed: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise UpstreamError("Credential Broker returned a non-object JSON response.")
-        if payload.get("ok") is not True or not isinstance(payload.get("auth"), dict):
-            raise UpstreamError(str(payload.get("message") or "Credential Broker did not resolve credentials."))
-
-        auth = dict(payload["auth"])
-        # Bridge accepts credentials carrying either username/password or token.
-        auth["mode"] = "credentials"
-        return auth
+    """The local Provider Bridge request failed."""
 
 
 class BridgeClient:
     def __init__(
         self,
         settings: Settings,
-        broker: BrokerClient,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._settings = settings
-        self._broker = broker
         self._client = httpx.Client(
             base_url=settings.bridge_url,
             timeout=settings.timeout_seconds,
@@ -131,7 +97,7 @@ class BridgeClient:
         for key in ("credential_id", "credentialId", "target", "targetBase", "target_base"):
             credential_id = auth.get(key)
             if isinstance(credential_id, str) and credential_id.strip():
-                return self._broker.resolve(credential_id.strip())
+                return {"mode": "credentials", "credential_id": credential_id.strip()}
         if auth.get("required") is False or str(auth.get("mode") or "").lower() == "none":
             return None
         raise UpstreamError(f"Connection {connection_name!r} requires auth but has no credential_id.")

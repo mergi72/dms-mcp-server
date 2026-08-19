@@ -5,9 +5,9 @@
 [![Release](https://img.shields.io/github/v/release/mergi72/dms-mcp-server?label=Release&color=blueviolet)](https://github.com/mergi72/dms-mcp-server/releases/latest)
 
 Read-only Model Context Protocol server for DMS repositories exposed by
-`dms-provider-bridge`. Credential resolution is delegated to the local
-`credential-broker`; the MCP server never reads Windows Credential Manager
-directly.
+`dms-provider-bridge`. The MCP server never receives DMS usernames, passwords
+or tokens. It forwards only the connection-owned `credential_id` reference and
+leaves credential resolution to the bridge.
 
 ## MVP tools
 
@@ -31,13 +31,13 @@ redirect to the underlying Alfresco document-library path.
 
 ```text
 MCP client --HTTP--> dms-mcp-server --HTTP--> dms-provider-bridge --> DMS
-                            |
-                            +----------HTTP--> credential-broker
+                                                       |
+                                                       +--> credential resolution
 ```
 For a connection path, the MCP server reads the connection auth contract from
-the bridge, sends its `credential_id` to the broker, and passes the resulting
-in-memory auth context to the bridge operation. Secrets are not returned in
-tool results or written to MCP configuration.
+the bridge and passes only its `credential_id` reference back to the bridge
+operation. The bridge owns resolution and use of DMS secrets. Secrets never
+enter the MCP process, tool results or MCP configuration.
 
 ## Configuration
 
@@ -49,7 +49,6 @@ Runtime data lives in `config/mcp.json`, separately from application code:
     "url": "http://127.0.0.1:8765",
     "minimumVersion": "0.2.0"
   },
-  "broker": { "url": "http://127.0.0.1:8776" },
   "server": { "host": "127.0.0.1", "port": 8781, "path": "/mcp" },
   "runtime": {
     "timeoutSeconds": 30,
@@ -95,7 +94,6 @@ Environment variables remain available as final runtime overrides:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DMS_BRIDGE_URL` | `http://127.0.0.1:8765` | Local bridge URL |
-| `DMS_BROKER_URL` | `http://127.0.0.1:8776` | Local broker URL |
 | `DMS_MCP_SERVER_HOST` | `127.0.0.1` | MCP service bind address |
 | `DMS_MCP_SERVER_PORT` | `8781` | MCP service port |
 | `DMS_MCP_SERVER_PATH` | `/mcp` | Streamable HTTP endpoint path |
@@ -106,9 +104,9 @@ Environment variables remain available as final runtime overrides:
 Credential IDs are owned by bridge connection configuration and are never
 selected by the AI or duplicated in MCP configuration.
 
-Bridge and broker HTTP clients ignore system proxy environment variables. This
-keeps local credential resolution and bridge traffic on their configured direct
-connections instead of routing them through `HTTP_PROXY` or `ALL_PROXY`.
+The Bridge HTTP client ignores system proxy environment variables. This keeps
+local Bridge traffic on its configured direct connection instead of routing it
+through `HTTP_PROXY` or `ALL_PROXY`.
 
 ## Development
 
@@ -127,7 +125,8 @@ Run the MCP HTTP service:
 The default endpoint is `http://127.0.0.1:8781/mcp`. Diagnostic scripts invoke
 the same executable with the explicit `--stdio` compatibility switch.
 
-Run the read-only live smoke test while bridge and broker are running:
+Run the read-only live smoke test while the bridge and its configured credential
+resolution service are running:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_live_smoke.py alfresco edocat
