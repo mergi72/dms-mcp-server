@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
+from dms_mcp_server import __version__
 from dms_mcp_server.clients import BridgeClient, BrokerClient
 from dms_mcp_server.config import Settings, load_settings
 
@@ -23,6 +26,10 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         streamable_http_path=active_settings.server_path,
         json_response=True,
     )
+
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health(_request: Request) -> JSONResponse:
+        return JSONResponse({"ok": True, "service": "vfs-mcp-server", "version": __version__})
 
     @mcp.tool()
     def bridge_health() -> dict:
