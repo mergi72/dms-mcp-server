@@ -9,6 +9,7 @@ import httpx
 
 from dms_mcp_server.config import Settings
 from dms_mcp_server.compatibility import require_supported_bridge_version
+from dms_mcp_server.tracing import current_correlation_headers
 
 
 class UpstreamError(RuntimeError):
@@ -30,6 +31,7 @@ class BrokerClient:
             response = self._client.post(
                 "/credentials/resolve",
                 json={"auth": {"mode": "windows", "target": credential_id, "required": True}},
+                headers=current_correlation_headers(),
             )
             response.raise_for_status()
             payload = response.json()
@@ -135,8 +137,10 @@ class BridgeClient:
         raise UpstreamError(f"Connection {connection_name!r} requires auth but has no credential_id.")
 
     def _json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        headers = dict(kwargs.pop("headers", {}))
+        headers.update(current_correlation_headers())
         try:
-            response = self._client.request(method, path, **kwargs)
+            response = self._client.request(method, path, headers=headers, **kwargs)
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -298,6 +302,7 @@ class BridgeClient:
             "POST",
             "/bridge/wfx/download-raw",
             json={"path": path, "auth": self._auth_for_path(path)},
+            headers=current_correlation_headers(),
         )
         response: httpx.Response | None = None
         try:
