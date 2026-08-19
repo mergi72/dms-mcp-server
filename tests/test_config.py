@@ -21,6 +21,7 @@ def _base_config() -> dict:
         "server": {"host": "127.0.0.1", "port": 8781, "path": "/mcp"},
         "inspector": {"host": "127.0.0.1", "port": 8780},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
+        "debug": {"enable": True, "path": "%APPDATA%\\DMS MCP\\logs"},
     }
 
 
@@ -40,6 +41,18 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     assert settings.timeout_seconds == 30
     assert settings.max_document_bytes == 1_048_576
     assert settings.minimum_bridge_version == "0.2.0"
+    assert settings.debug_enabled is True
+    assert settings.debug_path.endswith("DMS MCP\\logs")
+
+
+def test_debug_config_requires_boolean_enable(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    config = _base_config()
+    config["debug"]["enable"] = "true"
+    _write_config(machine_dir, "mcp.json", config)
+
+    with pytest.raises(ValueError, match="debug.enable"):
+        load_settings(machine_dir, tmp_path / "missing-user")
 
 
 def test_user_local_json_overrides_machine_config(tmp_path: Path) -> None:

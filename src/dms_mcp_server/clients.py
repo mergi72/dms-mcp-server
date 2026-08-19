@@ -22,6 +22,7 @@ class BrokerClient:
             timeout=settings.timeout_seconds,
             transport=transport,
             trust_env=False,
+            headers={"X-VFS-Component": "mcp"},
         )
 
     def resolve(self, credential_id: str) -> dict[str, Any]:
@@ -59,6 +60,7 @@ class BridgeClient:
             timeout=settings.timeout_seconds,
             transport=transport,
             trust_env=False,
+            headers={"X-VFS-Component": "mcp"},
         )
         self._compatibility_checked = False
 

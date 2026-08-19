@@ -18,5 +18,9 @@
   "runtime": {
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576
+  },
+  "debug": {
+    "enable": true,
+    "path": "%APPDATA%\\DMS MCP\\logs"
   }
 }

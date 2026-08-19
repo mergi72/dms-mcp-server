@@ -70,6 +70,8 @@ class Settings:
     server_path: str = "/mcp"
     inspector_host: str = "127.0.0.1"
     inspector_port: int = 8780
+    debug_enabled: bool = False
+    debug_path: str = "%APPDATA%\\DMS MCP\\logs"
 
 
 def load_settings(
@@ -98,8 +100,18 @@ def load_settings(
     server = payload.get("server")
     inspector = payload.get("inspector")
     runtime = payload.get("runtime")
+    debug = payload.get("debug", {})
     if not all(isinstance(section, dict) for section in (bridge, broker, server, inspector, runtime)):
         raise ValueError("Configuration requires bridge, broker, server, inspector and runtime JSON objects.")
+    if not isinstance(debug, dict):
+        raise ValueError("Configuration debug must be a JSON object.")
+
+    debug_enabled = debug.get("enable", False)
+    if not isinstance(debug_enabled, bool):
+        raise ValueError("debug.enable must be a boolean.")
+    debug_path = debug.get("path", "%APPDATA%\\DMS MCP\\logs")
+    if not isinstance(debug_path, str) or not debug_path.strip():
+        raise ValueError("debug.path must be a non-empty string.")
 
     bridge_url = os.getenv("DMS_BRIDGE_URL") or _required_string(bridge, "url", "bridge")
     minimum_bridge_version = os.getenv("DMS_MCP_MIN_BRIDGE_VERSION") or _required_string(
@@ -124,4 +136,6 @@ def load_settings(
         server_host=os.getenv("DMS_MCP_SERVER_HOST") or _required_string(server, "host", "server"),
         server_port=_positive_int(os.getenv("DMS_MCP_SERVER_PORT", server.get("port")), "server.port"),
         server_path=server_path,
+        debug_enabled=debug_enabled,
+        debug_path=os.path.expandvars(debug_path.strip()),
     )

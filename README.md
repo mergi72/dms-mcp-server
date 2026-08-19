@@ -54,9 +54,18 @@ Runtime data lives in `config/mcp.json`, separately from application code:
   "runtime": {
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576
+  },
+  "debug": {
+    "enable": true,
+    "path": "%APPDATA%\\DMS MCP\\logs"
   }
 }
 ```
+
+The service always writes UTF-8 operational events to `mcp.log`. When
+`debug.enable` is true, detailed events are also written to `mcp-debug.log` in
+the configured directory. Tool logs never contain credentials or downloaded
+document content.
 
 The machine configuration provides the required base document. Optional user
 overrides are loaded from `%APPDATA%\\DMS MCP\\config\\mcp.local.json` and
