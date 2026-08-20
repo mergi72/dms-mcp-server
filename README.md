@@ -94,7 +94,7 @@ Environment variables remain available as final runtime overrides:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DMS_BRIDGE_URL` | `http://127.0.0.1:8765` | Local bridge URL |
-| `DMS_MCP_SERVER_HOST` | `127.0.0.1` | MCP service bind address |
+| `DMS_MCP_SERVER_HOST` | `127.0.0.1` | Local MCP bind address (`127.0.0.1`, `localhost` or `::1`) |
 | `DMS_MCP_SERVER_PORT` | `8781` | MCP service port |
 | `DMS_MCP_SERVER_PATH` | `/mcp` | Streamable HTTP endpoint path |
 | `DMS_MCP_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout |

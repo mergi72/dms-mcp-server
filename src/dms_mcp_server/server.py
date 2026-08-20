@@ -17,6 +17,7 @@ from dms_mcp_server.tracing import CORRELATION_HEADER, correlation_scope
 
 
 LOGGER = logging.getLogger("mcp")
+SERVICE_NAME = "vfs-mcp-server"
 
 
 def _request_correlation_id(context: Context) -> str | None:
@@ -62,8 +63,8 @@ def create_server(settings: Settings | None = None) -> FastMCP:
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_request: Request) -> JSONResponse:
-        LOGGER.info("health_check status=ok service=vfs-mcp-server version=%s", __version__)
-        return JSONResponse({"ok": True, "service": "vfs-mcp-server", "version": __version__})
+        LOGGER.info("health_check status=ok service=%s version=%s", SERVICE_NAME, __version__)
+        return JSONResponse({"ok": True, "service": SERVICE_NAME, "version": __version__})
 
     @mcp.tool()
     def bridge_health(ctx: Context) -> dict:
@@ -125,7 +126,8 @@ def main() -> None:
     log_dir = configure_logging(settings)
     transport = "stdio" if args.stdio else "streamable-http"
     LOGGER.info(
-        "mcp_start service=vfs-mcp-server version=%s transport=%s host=%s port=%d path=%s log_dir=%s",
+        "mcp_start service=%s version=%s transport=%s host=%s port=%d path=%s log_dir=%s",
+        SERVICE_NAME,
         __version__,
         transport,
         settings.server_host,

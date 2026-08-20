@@ -81,6 +81,28 @@ def test_environment_overrides_json(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert settings.max_document_bytes == 2048
 
 
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.25", "mcp.example.test"])
+def test_server_rejects_non_local_bind(host: str, tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    config = _base_config()
+    config["server"]["host"] = host
+    _write_config(machine_dir, "mcp.json", config)
+
+    with pytest.raises(ValueError, match="server.host must be localhost"):
+        load_settings(machine_dir, tmp_path / "missing-user")
+
+
+def test_environment_cannot_override_server_to_non_local_bind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    machine_dir = tmp_path / "machine"
+    _write_config(machine_dir, "mcp.json", _base_config())
+    monkeypatch.setenv("DMS_MCP_SERVER_HOST", "0.0.0.0")
+
+    with pytest.raises(ValueError, match="server.host must be localhost"):
+        load_settings(machine_dir, tmp_path / "missing-user")
+
+
 def test_missing_machine_config_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="mcp.json"):
         load_settings(tmp_path / "missing", tmp_path / "user")

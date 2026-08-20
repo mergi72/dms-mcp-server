@@ -12,10 +12,10 @@ from dms_mcp_server.config import Settings
 
 def _settings(*, max_document_bytes: int = 1_048_576) -> Settings:
     return Settings(
-        "http://127.0.0.1:8765",
-        30,
-        max_document_bytes,
-        "0.2.0",
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=max_document_bytes,
+        minimum_bridge_version="0.2.0",
     )
 
 
@@ -388,7 +388,12 @@ def test_stat_uses_connection_auth() -> None:
 
 
 def test_rejects_unsupported_bridge_version() -> None:
-    settings = Settings("http://127.0.0.1:8765", 30, 100, "2.0.0")
+    settings = Settings(
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=100,
+        minimum_bridge_version="2.0.0",
+    )
     bridge = BridgeClient(settings, httpx.MockTransport(lambda _request: _health_response()))
 
     with pytest.raises(UpstreamError, match="minimum required version"):

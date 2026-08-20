@@ -9,11 +9,10 @@ from dms_mcp_server.logging_config import configure_logging
 
 def test_configure_logging_creates_normal_and_debug_logs(tmp_path: Path) -> None:
     settings = Settings(
-        "http://127.0.0.1:8765",
-        "http://127.0.0.1:8776",
-        30,
-        1_048_576,
-        "0.2.0",
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=1_048_576,
+        minimum_bridge_version="0.2.0",
         debug_enabled=True,
         debug_path=str(tmp_path),
     )

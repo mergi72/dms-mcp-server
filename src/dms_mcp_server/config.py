@@ -9,6 +9,9 @@ from typing import Any
 from dms_mcp_server.paths import MACHINE_CONFIG_DIR, USER_CONFIG_DIR
 
 
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -58,6 +61,13 @@ def _positive_int(value: object, location: str) -> int:
     return parsed
 
 
+def _local_host(value: str, location: str) -> str:
+    host = value.strip().lower()
+    if host not in _LOCAL_HOSTS:
+        raise ValueError(f"{location} must be localhost until MCP client authentication is available.")
+    return host
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     bridge_url: str
@@ -71,6 +81,9 @@ class Settings:
     inspector_port: int = 8780
     debug_enabled: bool = False
     debug_path: str = "%APPDATA%\\DMS MCP\\logs"
+
+    def __post_init__(self) -> None:
+        _local_host(self.server_host, "server.host")
 
 
 def load_settings(
@@ -129,7 +142,10 @@ def load_settings(
         timeout_seconds=_positive_float(timeout, "runtime.timeoutSeconds"),
         max_document_bytes=_positive_int(max_bytes, "runtime.maxDocumentBytes"),
         minimum_bridge_version=minimum_bridge_version,
-        server_host=os.getenv("DMS_MCP_SERVER_HOST") or _required_string(server, "host", "server"),
+        server_host=_local_host(
+            os.getenv("DMS_MCP_SERVER_HOST") or _required_string(server, "host", "server"),
+            "server.host",
+        ),
         server_port=_positive_int(os.getenv("DMS_MCP_SERVER_PORT", server.get("port")), "server.port"),
         server_path=server_path,
         debug_enabled=debug_enabled,
