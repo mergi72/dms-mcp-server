@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -18,6 +19,11 @@ from dms_mcp_server.tracing import CORRELATION_HEADER, correlation_scope
 
 LOGGER = logging.getLogger("mcp")
 SERVICE_NAME = "vfs-mcp-server"
+READ_ONLY_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    openWorldHint=False,
+)
 
 
 def _request_correlation_id(context: Context) -> str | None:
@@ -66,22 +72,22 @@ def create_server(settings: Settings | None = None) -> FastMCP:
         LOGGER.info("health_check status=ok service=%s version=%s", SERVICE_NAME, __version__)
         return JSONResponse({"ok": True, "service": SERVICE_NAME, "version": __version__})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def bridge_health(ctx: Context) -> dict:
         """Check whether the local DMS Provider Bridge is available."""
         return _run_tool("bridge_health", bridge.health, _request_correlation_id(ctx))
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def list_connections(ctx: Context) -> dict:
         """List DMS connections available through the bridge."""
         return _run_tool("list_connections", bridge.list_connections, _request_correlation_id(ctx))
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def list_items(ctx: Context, path: str = "/") -> dict:
         """List files and folders at a connection:/path location."""
         return _run_tool("list_items", lambda: bridge.list_items(path), _request_correlation_id(ctx), path=path)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def search_items(path: str, query: str, ctx: Context, max_results: int = 20, files_only: bool = True) -> dict:
         """Search natively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only."""
         return _run_tool(
@@ -93,17 +99,17 @@ def create_server(settings: Settings | None = None) -> FastMCP:
             files_only=files_only,
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def open_share_url(share_url: str, ctx: Context, connection: str = "auto") -> dict:
         """Open an Alfresco or eDoCat DMS share URL read-only. Resolve its exact path, return item metadata, and list contents when it targets a folder."""
         return _run_tool("open_share_url", lambda: bridge.open_share_url(share_url, connection), _request_correlation_id(ctx), connection=connection)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def get_item_info(path: str, ctx: Context) -> dict:
         """Return metadata for one file or folder at connection:/path."""
         return _run_tool("get_item_info", lambda: bridge.stat(path), _request_correlation_id(ctx), path=path)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def read_document(path: str, ctx: Context) -> dict:
         """Read a size-limited document; text is decoded and binary data is base64 encoded."""
         result = _run_tool("read_document", lambda: bridge.read_document(path), _request_correlation_id(ctx), path=path)
