@@ -92,7 +92,7 @@ def create_server(settings: Settings | None = None) -> FastMCP:
 
     @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def search_items(path: str, query: str, ctx: Context, max_results: int = 20, files_only: bool = True) -> dict:
-        """Search natively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only."""
+        """Search names recursively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only."""
         return _run_tool(
             "search_items",
             lambda: bridge.search_items(path, query, max_results, files_only),

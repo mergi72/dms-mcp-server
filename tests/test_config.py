@@ -20,6 +20,23 @@ def _base_config() -> dict:
         "server": {"host": "127.0.0.1", "port": 8781, "path": "/mcp"},
         "inspector": {"host": "127.0.0.1", "port": 8780},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
+        "search": {
+            "mode": "recursive_list",
+            "caseSensitive": False,
+            "maxDepth": 64,
+            "maxFolders": 5000,
+            "timeoutSeconds": 120,
+            "concurrency": 4,
+            "maxResults": 1000,
+        },
+        "routing": {
+            "connections": {
+                "edocat": {
+                    "lowLevelConnection": "alfresco",
+                    "operations": ["list_items", "search_items", "read_document"],
+                }
+            }
+        },
         "debug": {"enable": True, "path": "%APPDATA%\\DMS MCP\\logs"},
     }
 
@@ -41,6 +58,26 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     assert settings.minimum_bridge_version == "0.2.0"
     assert settings.debug_enabled is True
     assert settings.debug_path.endswith("DMS MCP\\logs")
+    assert settings.search_mode == "recursive_list"
+    assert settings.search_case_sensitive is False
+    assert settings.search_max_depth == 64
+    assert settings.search_max_folders == 5000
+    assert settings.search_timeout_seconds == 120
+    assert settings.search_concurrency == 4
+    assert settings.search_max_results == 1000
+    assert settings.route_connection("search_items", "edocat") == "alfresco"
+    assert settings.route_connection("search_metadata", "edocat") == "edocat"
+    assert settings.route_connection("search_items", "webdav") == "webdav"
+
+
+def test_routing_rejects_unknown_operation(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    config = _base_config()
+    config["routing"]["connections"]["edocat"]["operations"] = ["delete_item"]
+    _write_config(machine_dir, "mcp.json", config)
+
+    with pytest.raises(ValueError, match="unsupported operation"):
+        load_settings(machine_dir, tmp_path / "missing-user")
 
 
 def test_debug_config_requires_boolean_enable(tmp_path: Path) -> None:

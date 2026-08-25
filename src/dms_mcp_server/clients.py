@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import perf_counter
 from typing import Any
 from urllib.parse import quote
 
@@ -10,6 +14,9 @@ import httpx
 from dms_mcp_server.config import Settings
 from dms_mcp_server.compatibility import require_supported_bridge_version
 from dms_mcp_server.tracing import current_correlation_headers
+
+
+LOGGER = logging.getLogger("mcp")
 
 
 class UpstreamError(RuntimeError):
@@ -53,6 +60,55 @@ class BridgeClient:
         name, _separator, _remainder = path.partition(":/")
         normalized = name.strip()
         return normalized or None
+
+    def _route_path(self, operation: str, path: str) -> tuple[str, str, str, bool]:
+        requested_connection = self._connection_name(path)
+        if requested_connection is None:
+            return path, "", "", False
+        execution_connection = self._settings.route_connection(operation, requested_connection)
+        routed = execution_connection.casefold() != requested_connection.casefold()
+        if not routed:
+            return path, requested_connection, execution_connection, False
+        _mount, separator, remainder = path.partition(":/")
+        if not separator:
+            raise ValueError("path must use the connection:/path format.")
+        return f"{execution_connection}:/{remainder}", requested_connection, execution_connection, True
+
+    @staticmethod
+    def _routing_data(requested_connection: str, execution_connection: str, routed: bool) -> dict[str, Any]:
+        return {
+            "requested_connection": requested_connection,
+            "execution_connection": execution_connection,
+            "mode": "configured_low_level" if routed else "requested_connection",
+        }
+
+    @staticmethod
+    def _present_routed_listing(
+        payload: dict[str, Any],
+        requested_path: str,
+        requested_connection: str,
+        execution_connection: str,
+    ) -> dict[str, Any]:
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return payload
+        items = data.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name")
+                if isinstance(name, str) and name.strip():
+                    item["path"] = f"{requested_path.rstrip('/')}/{name.strip()}"
+        data["connection"] = requested_connection
+        data["path"] = requested_path.partition(":")[2] or "/"
+        data["routing"] = BridgeClient._routing_data(requested_connection, execution_connection, True)
+        metadata = payload.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata["connection"] = requested_connection
+            metadata["execution_connection"] = execution_connection
+            metadata["routing"] = "configured_low_level"
+        return payload
 
     @staticmethod
     def _public_search_path(
@@ -174,34 +230,213 @@ class BridgeClient:
 
     def list_items(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()
+        execution_path, requested_connection, execution_connection, routed = self._route_path("list_items", path)
+        payload = self._json(
+            "POST",
+            "/bridge/wfx/list",
+            json={"path": execution_path, "auth": self._auth_for_path(execution_path)},
+        )
+        if routed:
+            return self._present_routed_listing(
+                payload, path, requested_connection, execution_connection,
+            )
+        return payload
+
+    @staticmethod
+    def _join_public_path(mount: str, parent_path: str, item: dict[str, Any]) -> str | None:
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return None
+        # The stable list contract identifies the current folder by the request
+        # path and each child by name. Providers differ in whether item.path is
+        # the parent, the child, or an internal repository path, so it is not
+        # authoritative for recursive VFS traversal.
+        return f"{parent_path.rstrip('/')}/{name.strip()}"
+
+    def _list_items_with_auth(
+        self,
+        path: str,
+        auth: dict[str, Any] | None,
+        correlation_headers: dict[str, str],
+    ) -> dict[str, Any]:
         return self._json(
             "POST",
             "/bridge/wfx/list",
-            json={"path": path, "auth": self._auth_for_path(path)},
+            headers=correlation_headers,
+            json={"path": path, "auth": auth},
         )
 
     def search_items(self, path: str, query: str, max_results: int = 20, files_only: bool = True) -> dict[str, Any]:
         self._ensure_compatible()
-        if not isinstance(max_results, int) or isinstance(max_results, bool) or not 1 <= max_results <= 100:
-            raise ValueError("max_results must be an integer between 1 and 100.")
+        if (
+            not isinstance(max_results, int)
+            or isinstance(max_results, bool)
+            or not 1 <= max_results <= self._settings.search_max_results
+        ):
+            raise ValueError(
+                f"max_results must be an integer between 1 and {self._settings.search_max_results}."
+            )
         normalized_query = query.strip()
         if not normalized_query:
             raise ValueError("query must not be empty.")
         if not isinstance(files_only, bool):
             raise ValueError("files_only must be a boolean.")
-        auth = self._auth_for_path(path)
-        payload = self._json(
-            "POST",
-            "/bridge/wfx/search",
-            json={
-                "path": path,
-                "query": normalized_query,
-                "max_results": max_results,
-                "files_only": files_only,
-                "auth": auth,
-            },
+        execution_path, requested_connection, execution_connection, routed = self._route_path("search_items", path)
+        connection_name = self._connection_name(execution_path)
+        if connection_name is None:
+            raise ValueError("path must use the connection:/path format.")
+        detail = self.connection_detail(connection_name)
+        detail_data = detail.get("data")
+        mount = detail_data.get("mount") if isinstance(detail_data, dict) else None
+        if not isinstance(mount, str) or not mount.endswith(":/"):
+            raise UpstreamError(f"Connection {connection_name!r} has no valid mount in bridge.")
+        auth_contract = detail_data.get("auth") if isinstance(detail_data, dict) else None
+        if not isinstance(auth_contract, dict):
+            raise UpstreamError(f"Connection {connection_name!r} has no auth contract in bridge.")
+        auth: dict[str, Any] | None = None
+        for key in ("credential_id", "credentialId", "target", "targetBase", "target_base"):
+            credential_id = auth_contract.get(key)
+            if isinstance(credential_id, str) and credential_id.strip():
+                auth = {"mode": "credentials", "credential_id": credential_id.strip()}
+                break
+        if auth is None and not (
+            auth_contract.get("required") is False
+            or str(auth_contract.get("mode") or "").lower() == "none"
+        ):
+            raise UpstreamError(f"Connection {connection_name!r} requires auth but has no credential_id.")
+
+        needle = normalized_query if self._settings.search_case_sensitive else normalized_query.casefold()
+        start_path = execution_path if execution_path.endswith(":/") else execution_path.rstrip("/")
+        pending: deque[tuple[str, int]] = deque([(start_path or mount, 0)])
+        visited: set[str] = set()
+        matches: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        started = perf_counter()
+        provider: str | None = None
+        complete = True
+        correlation_headers = current_correlation_headers()
+
+        while pending:
+            if perf_counter() - started >= self._settings.search_timeout_seconds:
+                warnings.append("Search timeout reached.")
+                complete = False
+                break
+            batch: list[tuple[str, int]] = []
+            while pending and len(batch) < self._settings.search_concurrency:
+                folder_path, depth = pending.popleft()
+                key = folder_path.casefold()
+                if key in visited:
+                    continue
+                if len(visited) >= self._settings.search_max_folders:
+                    warnings.append("Maximum folder count reached.")
+                    complete = False
+                    pending.clear()
+                    break
+                visited.add(key)
+                batch.append((folder_path, depth))
+            if not batch:
+                continue
+
+            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                futures = {
+                    executor.submit(
+                        self._list_items_with_auth,
+                        folder_path,
+                        auth,
+                        correlation_headers,
+                    ): (folder_path, depth)
+                    for folder_path, depth in batch
+                }
+                for future in as_completed(futures):
+                    folder_path, depth = futures[future]
+                    try:
+                        payload = future.result()
+                    except Exception as exc:
+                        warnings.append(f"Could not list {folder_path}: {type(exc).__name__}")
+                        complete = False
+                        continue
+                    data = payload.get("data")
+                    if not isinstance(data, dict):
+                        warnings.append(f"Invalid list response for {folder_path}.")
+                        complete = False
+                        continue
+                    if provider is None and isinstance(data.get("provider"), str):
+                        provider = data["provider"]
+                    items = data.get("items")
+                    if not isinstance(items, list):
+                        warnings.append(f"Invalid item list for {folder_path}.")
+                        complete = False
+                        continue
+                    for raw_item in items:
+                        if not isinstance(raw_item, dict):
+                            continue
+                        public_path = self._join_public_path(mount, folder_path, raw_item)
+                        if public_path is None:
+                            continue
+                        item = dict(raw_item)
+                        item["path"] = public_path
+                        is_folder = item.get("is_folder") is True
+                        name = item.get("name")
+                        comparable = name if isinstance(name, str) else ""
+                        if not self._settings.search_case_sensitive:
+                            comparable = comparable.casefold()
+                        if needle in comparable and (not files_only or not is_folder):
+                            matches.append(item)
+                        if is_folder and depth < self._settings.search_max_depth:
+                            pending.append((public_path, depth + 1))
+                        elif is_folder and depth >= self._settings.search_max_depth:
+                            complete = False
+                            if "Maximum search depth reached." not in warnings:
+                                warnings.append("Maximum search depth reached.")
+
+        unique: dict[str, dict[str, Any]] = {}
+        for item in matches:
+            unique.setdefault(str(item["path"]).casefold(), item)
+        ordered = sorted(unique.values(), key=lambda item: str(item["path"]).casefold())
+        returned = ordered[:max_results]
+        if routed:
+            execution_prefix = f"{execution_connection}:/"
+            requested_prefix = f"{requested_connection}:/"
+            for item in returned:
+                item_path = item.get("path")
+                if isinstance(item_path, str) and item_path.casefold().startswith(execution_prefix.casefold()):
+                    item["path"] = requested_prefix + item_path[len(execution_prefix):]
+        duration_ms = round((perf_counter() - started) * 1000)
+        LOGGER.info(
+            "mcp_recursive_search path=%r query=%r folders_scanned=%d total=%d returned=%d complete=%s duration_ms=%d",
+            path, normalized_query, len(visited), len(ordered), len(returned), complete, duration_ms,
         )
-        return self._rewrite_search_item_paths(path, payload, auth)
+        return {
+            "ok": True,
+            "data": {
+                "connection": requested_connection or connection_name,
+                "path": path.partition(":")[2] or "/",
+                "query": normalized_query,
+                "total": len(ordered),
+                "returned": len(returned),
+                "items": returned,
+                "truncated": len(ordered) > len(returned) or not complete,
+                "provider": provider,
+                "search": {
+                    "mode": "recursive_list",
+                    "folders_scanned": len(visited),
+                    "duration_ms": duration_ms,
+                    "complete": complete,
+                    "warnings": warnings,
+                },
+                "routing": self._routing_data(
+                    requested_connection or connection_name,
+                    execution_connection or connection_name,
+                    routed,
+                ),
+            },
+            "metadata": {
+                "connection": requested_connection or connection_name,
+                "execution_connection": execution_connection or connection_name,
+                "provider": provider,
+                "routing": "configured_low_level" if routed else "requested_connection",
+            },
+        }
 
     def search_metadata(self, path: str, field: str, value: str, max_results: int = 20, files_only: bool = False) -> dict[str, Any]:
         self._ensure_compatible()
@@ -288,18 +523,32 @@ class BridgeClient:
 
     def stat(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()
-        return self._json(
+        execution_path, requested_connection, execution_connection, routed = self._route_path("get_item_info", path)
+        payload = self._json(
             "POST",
             "/bridge/wfx/stat",
-            json={"path": path, "auth": self._auth_for_path(path)},
+            json={"path": execution_path, "auth": self._auth_for_path(execution_path)},
         )
+        if routed:
+            data = payload.get("data")
+            if isinstance(data, dict):
+                data["connection"] = requested_connection
+                data["path"] = path
+                data["routing"] = self._routing_data(requested_connection, execution_connection, True)
+            metadata = payload.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["connection"] = requested_connection
+                metadata["execution_connection"] = execution_connection
+                metadata["routing"] = "configured_low_level"
+        return payload
 
     def read_document(self, path: str) -> dict[str, Any]:
         self._ensure_compatible()
+        execution_path, requested_connection, execution_connection, routed = self._route_path("read_document", path)
         request = self._client.build_request(
             "POST",
             "/bridge/wfx/download-raw",
-            json={"path": path, "auth": self._auth_for_path(path)},
+            json={"path": execution_path, "auth": self._auth_for_path(execution_path)},
             headers=current_correlation_headers(),
         )
         response: httpx.Response | None = None
@@ -345,6 +594,11 @@ class BridgeClient:
             "mime_type": media_type,
             "size": len(content),
             "sha256": hashlib.sha256(content).hexdigest(),
+            "routing": self._routing_data(
+                requested_connection,
+                execution_connection,
+                routed,
+            ) if requested_connection else None,
         }
         if media_type.startswith("text/") or media_type in {"application/json", "application/xml"}:
             result["text"] = content.decode("utf-8", errors="replace")

@@ -16,6 +16,27 @@
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576
   },
+  "search": {
+    "mode": "recursive_list",
+    "caseSensitive": false,
+    "maxDepth": 64,
+    "maxFolders": 5000,
+    "timeoutSeconds": 120,
+    "concurrency": 4,
+    "maxResults": 1000
+  },
+  "routing": {
+    "connections": {
+      "edocat": {
+        "lowLevelConnection": "alfresco",
+        "operations": [
+          "list_items",
+          "search_items",
+          "read_document"
+        ]
+      }
+    }
+  },
   "debug": {
     "enable": true,
     "path": "%APPDATA%\\DMS MCP\\logs"

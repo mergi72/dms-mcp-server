@@ -8,15 +8,43 @@ import pytest
 
 from dms_mcp_server.clients import BridgeClient, UpstreamError
 from dms_mcp_server.config import Settings
+from dms_mcp_server.tracing import correlation_scope
 
 
-def _settings(*, max_document_bytes: int = 1_048_576) -> Settings:
+def _settings(*, max_document_bytes: int = 1_048_576, routing: bool = False) -> Settings:
     return Settings(
         bridge_url="http://127.0.0.1:8765",
         timeout_seconds=30,
         max_document_bytes=max_document_bytes,
         minimum_bridge_version="0.2.0",
+        routing_rules=(("edocat", "alfresco", ("list_items", "search_items", "read_document")),) if routing else (),
     )
+
+
+def test_list_items_routes_edocat_low_level_operation_to_alfresco() -> None:
+    settings = _settings(routing=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            assert request.url.path == "/bridge/wfx/connections/alfresco"
+            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+        assert json.loads(request.content) == {"path": "alfresco:/Shared", "auth": None}
+        return httpx.Response(200, json={"ok": True, "data": {"connection": "alfresco", "provider": "alfresco", "items": [
+            {"name": "Document.pdf", "path": "/internal/path", "is_folder": False}
+        ]}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.list_items("edocat:/Shared")
+
+    assert result["data"]["connection"] == "edocat"
+    assert result["data"]["items"][0]["path"] == "edocat:/Shared/Document.pdf"
+    assert result["data"]["routing"] == {
+        "requested_connection": "edocat",
+        "execution_connection": "alfresco",
+        "mode": "configured_low_level",
+    }
 
 
 def _health_response() -> httpx.Response:
@@ -67,34 +95,71 @@ def test_root_listing_sends_no_auth_reference() -> None:
     assert bridge.list_items("/")["ok"] is True
 
 
-def test_search_items_forwards_general_contract_and_auth() -> None:
+def test_search_items_recursively_lists_with_one_connection_lookup_and_auth() -> None:
     settings = _settings()
+    requests: list[tuple[str, str, dict[str, object] | None]] = []
+
     def bridge_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/health":
             return _health_response()
         if request.method == "GET":
+            requests.append((request.method, request.url.path, None))
             return httpx.Response(
                 200,
                 json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": True, "credential_id": "company/dms"}}},
             )
-        assert request.url.path == "/bridge/wfx/search"
-        assert json.loads(request.content) == {
-            "path": "alfresco:/projects",
-            "query": "steam DN50",
-            "max_results": 15,
-            "files_only": True,
-            "auth": {"mode": "credentials", "credential_id": "company/dms"},
-        }
-        return httpx.Response(
-            200,
-            json={"ok": True, "data": {"total": 1, "items": [{"id": "1", "path": "/projects/steam.docx"}]}},
-        )
+        body = json.loads(request.content)
+        requests.append((request.method, request.url.path, body))
+        assert request.url.path == "/bridge/wfx/list"
+        assert request.headers["X-VFS-Correlation-ID"] == "123e4567-e89b-12d3-a456-426614174099"
+        assert body["auth"] == {"mode": "credentials", "credential_id": "company/dms"}
+        if body["path"] == "alfresco:/projects":
+            return httpx.Response(200, json={"ok": True, "data": {"provider": "alfresco", "items": [
+                {"name": "docs", "path": "/Agenda/Stránky/deals/documentLibrary/projects", "is_folder": True},
+                {"name": "unrelated.txt", "path": "/projects/unrelated.txt", "is_folder": False},
+            ]}})
+        assert body["path"] == "alfresco:/projects/docs"
+        return httpx.Response(200, json={"ok": True, "data": {"provider": "alfresco", "items": [
+            {"id": "1", "name": "22080-5-PS368-D-TZ-01_3.pdf", "path": "/Agenda/Stránky/deals/documentLibrary/projects/docs", "is_folder": False},
+        ]}})
 
     bridge = BridgeClient(settings, httpx.MockTransport(bridge_handler))
+    correlation_id = "123e4567-e89b-12d3-a456-426614174099"
+    with correlation_scope(correlation_id):
+        result = bridge.search_items("alfresco:/projects", " -tz- ", 15)
 
-    result = bridge.search_items("alfresco:/projects", " steam DN50 ", 15)
-    assert result["ok"] is True
-    assert result["data"]["items"][0]["path"] == "alfresco:/projects/steam.docx"
+    assert result["data"]["items"][0]["path"] == "alfresco:/projects/docs/22080-5-PS368-D-TZ-01_3.pdf"
+    assert result["data"]["search"]["folders_scanned"] == 2
+    assert result["data"]["search"]["complete"] is True
+    assert [request[1] for request in requests].count("/bridge/wfx/connections/alfresco") == 1
+    assert all(request[1] != "/bridge/wfx/search" for request in requests)
+
+
+def test_search_items_routes_edocat_tree_through_alfresco_and_preserves_public_mount() -> None:
+    settings = _settings(routing=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            assert request.url.path == "/bridge/wfx/connections/alfresco"
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}},
+            )
+        body = json.loads(request.content)
+        assert body["path"] == "alfresco:/Projects"
+        return httpx.Response(200, json={"ok": True, "data": {"provider": "alfresco", "items": [
+            {"name": "Report-TZ-01.pdf", "is_folder": False}
+        ]}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.search_items("edocat:/Projects", "-TZ-")
+
+    assert result["data"]["connection"] == "edocat"
+    assert result["data"]["provider"] == "alfresco"
+    assert result["data"]["items"][0]["path"] == "edocat:/Projects/Report-TZ-01.pdf"
+    assert result["data"]["routing"]["execution_connection"] == "alfresco"
 
 
 def test_search_items_forwards_folder_inclusion() -> None:
@@ -152,7 +217,12 @@ def test_search_items_returns_connection_path_below_document_library() -> None:
         if request.url.path == "/bridge/wfx/list":
             return httpx.Response(
                 200,
-                json={"ok": True, "data": {"items": [{"name": "03 zakázky v realizaci"}]}},
+                json={"ok": True, "data": {"provider": "alfresco", "items": [{
+                    "id": "1",
+                    "name": "22 080 - UNI_Novy odolejovac bl. 68",
+                    "path": "/03 zakázky v realizaci/22 080 - UNI_Novy odolejovac bl. 68",
+                    "is_folder": False,
+                }]}},
             )
         return httpx.Response(
             200,
@@ -171,7 +241,7 @@ def test_search_items_returns_connection_path_below_document_library() -> None:
 
     bridge = BridgeClient(settings, httpx.MockTransport(handler))
 
-    result = bridge.search_items("alfresco:/", "22080")
+    result = bridge.search_items("alfresco:/03 zakázky v realizaci", "22 080")
 
     assert result["data"]["items"][0]["path"] == (
         "alfresco:/03 zakázky v realizaci/22 080 - UNI_Novy odolejovac bl. 68"
@@ -196,7 +266,7 @@ def test_public_search_path_refuses_unmatched_internal_path() -> None:
     ) is None
 
 
-@pytest.mark.parametrize("value", [0, 101, True, 1.5])
+@pytest.mark.parametrize("value", [0, 1001, True, 1.5])
 def test_search_items_rejects_invalid_limit(value: object) -> None:
     settings = _settings()
     bridge = BridgeClient(settings, httpx.MockTransport(lambda _request: _health_response()))
@@ -339,6 +409,30 @@ def test_read_text_document() -> None:
     assert result["sha256"] == hashlib.sha256("Ahoj DMS".encode()).hexdigest()
 
 
+def test_read_document_routes_edocat_content_through_alfresco() -> None:
+    settings = _settings(max_document_bytes=100, routing=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            assert request.url.path == "/bridge/wfx/connections/alfresco"
+            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+        assert json.loads(request.content)["path"] == "alfresco:/Shared/readme.txt"
+        return httpx.Response(
+            200,
+            content=b"routed",
+            headers={"X-Bridge-Raw-Content": "1", "Content-Type": "text/plain"},
+        )
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.read_document("edocat:/Shared/readme.txt")
+
+    assert result["path"] == "edocat:/Shared/readme.txt"
+    assert result["text"] == "routed"
+    assert result["routing"]["execution_connection"] == "alfresco"
+
+
 def test_read_text_document_hashes_original_bytes() -> None:
     settings = _settings(max_document_bytes=100)
     original = b"\x80non-utf8"
@@ -411,6 +505,30 @@ def test_stat_uses_connection_auth() -> None:
     bridge = BridgeClient(settings, httpx.MockTransport(bridge_handler))
 
     assert bridge.stat("alfresco:/readme.txt")["data"]["name"] == "readme.txt"
+
+
+def test_stat_can_be_enabled_in_low_level_router() -> None:
+    settings = Settings(
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=100,
+        minimum_bridge_version="0.2.0",
+        routing_rules=(("edocat", "alfresco", ("get_item_info",)),),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(200, json={"ok": True, "data": {"auth": {"required": False}}})
+        assert json.loads(request.content)["path"] == "alfresco:/Shared/report.pdf"
+        return httpx.Response(200, json={"ok": True, "data": {"name": "report.pdf"}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.stat("edocat:/Shared/report.pdf")
+
+    assert result["data"]["path"] == "edocat:/Shared/report.pdf"
+    assert result["data"]["routing"]["execution_connection"] == "alfresco"
 
 
 def test_rejects_unsupported_bridge_version() -> None:
