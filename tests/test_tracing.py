@@ -14,6 +14,11 @@ def test_correlation_scope_is_isolated_and_produces_header() -> None:
     assert current_correlation_headers() == {}
 
 
+def test_mcp_session_id_is_normalized_to_uuid() -> None:
+    with correlation_scope("720745f0d9294cbe8fe53933672e90c1") as active:
+        assert active == "720745f0-d929-4cbe-8fe5-3933672e90c1"
+
+
 def test_parallel_clients_keep_results_and_downstream_correlation_ids_isolated() -> None:
     barrier = Barrier(3)
     calls = [

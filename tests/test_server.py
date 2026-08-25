@@ -3,7 +3,32 @@ from __future__ import annotations
 import asyncio
 
 from dms_mcp_server.config import Settings
-from dms_mcp_server.server import create_server
+from dms_mcp_server.server import _request_correlation_id, create_server
+
+
+class _RequestContext:
+    def __init__(self, headers: dict[str, str]) -> None:
+        self.request = type("Request", (), {"headers": headers})()
+
+
+class _Context:
+    def __init__(self, headers: dict[str, str]) -> None:
+        self.request_context = _RequestContext(headers)
+
+
+def test_request_correlation_prefers_vfs_header() -> None:
+    context = _Context(
+        {
+            "X-VFS-Correlation-ID": "123e4567-e89b-12d3-a456-426614174000",
+            "Mcp-Session-Id": "720745f0d9294cbe8fe53933672e90c1",
+        }
+    )
+    assert _request_correlation_id(context) == "123e4567-e89b-12d3-a456-426614174000"
+
+
+def test_request_correlation_falls_back_to_mcp_session() -> None:
+    context = _Context({"Mcp-Session-Id": "720745f0d9294cbe8fe53933672e90c1"})
+    assert _request_correlation_id(context) == "720745f0d9294cbe8fe53933672e90c1"
 
 
 def test_server_registers_only_expected_read_only_tools() -> None:
@@ -20,6 +45,7 @@ def test_server_registers_only_expected_read_only_tools() -> None:
         "list_connections",
         "list_items",
         "search_items",
+        "search_metadata",
         "open_share_url",
         "get_item_info",
         "read_document",
@@ -47,6 +73,7 @@ def test_tool_input_contract_stays_compatible_with_demi() -> None:
         "list_connections": ({}, set()),
         "list_items": ({"path": "/"}, set()),
         "search_items": ({"path": None, "query": None, "max_results": 20, "files_only": True}, {"path", "query"}),
+        "search_metadata": ({"path": None, "field": None, "value": None, "max_results": 20, "files_only": False}, {"path", "field", "value"}),
         "open_share_url": ({"share_url": None, "connection": "auto"}, {"share_url"}),
         "get_item_info": ({"path": None}, {"path"}),
         "read_document": ({"path": None}, {"path"}),

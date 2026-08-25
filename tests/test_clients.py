@@ -115,6 +115,32 @@ def test_search_items_forwards_folder_inclusion() -> None:
     assert bridge.search_items("alfresco:/", "steam", files_only=False)["ok"] is True
 
 
+def test_search_metadata_forwards_field_value_path_and_auth() -> None:
+    settings = _settings()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(200, json={"ok": True, "data": {"mount": "edocat:/", "auth": {"required": True, "credential_id": "company/dms"}}})
+        if request.url.path == "/bridge/wfx/list":
+            return httpx.Response(200, json={"ok": True, "data": {"items": []}})
+        assert request.url.path == "/bridge/wfx/search-metadata"
+        assert json.loads(request.content) == {
+            "path": "edocat:/",
+            "field": "rf:set.CMtaggable",
+            "value": "nod68-dps",
+            "max_results": 20,
+            "files_only": False,
+            "auth": {"mode": "credentials", "credential_id": "company/dms"},
+        }
+        return httpx.Response(200, json={"ok": True, "data": {"items": []}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+
+    assert bridge.search_metadata("edocat:/", " rf:set.CMtaggable ", " nod68-dps ")["ok"] is True
+
+
 def test_search_items_returns_connection_path_below_document_library() -> None:
     settings = _settings()
 

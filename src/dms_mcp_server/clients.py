@@ -79,6 +79,45 @@ class BridgeClient:
         relative = "/" + "/".join(segments[start:])
         return f"{mount.rstrip('/')}{relative}"
 
+    def _rewrite_search_item_paths(
+        self,
+        requested_path: str,
+        payload: dict[str, Any],
+        auth: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        connection_name = self._connection_name(requested_path)
+        data = payload.get("data")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not connection_name or not isinstance(items, list):
+            return payload
+        detail_data = self.connection_detail(connection_name).get("data")
+        mount = detail_data.get("mount") if isinstance(detail_data, dict) else None
+        if not isinstance(mount, str) or not mount.endswith(":/"):
+            raise UpstreamError(f"Connection {connection_name!r} has no valid mount in bridge.")
+        search_root = data.get("path") if isinstance(data.get("path"), str) else requested_path.partition(":")[2]
+        search_root = search_root or "/"
+        root_names: set[str] = set()
+        if search_root == "/":
+            root_payload = self._json("POST", "/bridge/wfx/list", json={"path": mount, "auth": auth})
+            root_data = root_payload.get("data")
+            root_items = root_data.get("items") if isinstance(root_data, dict) else None
+            if isinstance(root_items, list):
+                root_names = {
+                    str(item["name"])
+                    for item in root_items
+                    if isinstance(item, dict) and isinstance(item.get("name"), str)
+                }
+        for item in items:
+            item_path = item.get("path") if isinstance(item, dict) else None
+            if isinstance(item_path, str) and item_path.startswith("/"):
+                public_path = self._public_search_path(mount, search_root, item_path, root_names)
+                if public_path is None:
+                    item.pop("path", None)
+                    item["path_unresolved"] = True
+                else:
+                    item["path"] = public_path
+        return payload
+
     def connection_detail(self, connection_name: str) -> dict[str, Any]:
         encoded_name = quote(connection_name.strip(), safe="")
         return self._json("GET", f"/bridge/wfx/connections/{encoded_name}")
@@ -162,41 +201,34 @@ class BridgeClient:
                 "auth": auth,
             },
         )
-        connection_name = self._connection_name(path)
-        data = payload.get("data")
-        items = data.get("items") if isinstance(data, dict) else None
-        if connection_name and isinstance(items, list):
-            detail_data = self.connection_detail(connection_name).get("data")
-            mount = detail_data.get("mount") if isinstance(detail_data, dict) else None
-            if not isinstance(mount, str) or not mount.endswith(":/"):
-                raise UpstreamError(f"Connection {connection_name!r} has no valid mount in bridge.")
-            search_root = data.get("path") if isinstance(data.get("path"), str) else path.partition(":")[2]
-            search_root = search_root or "/"
-            root_names: set[str] = set()
-            if search_root == "/":
-                root_payload = self._json(
-                    "POST",
-                    "/bridge/wfx/list",
-                    json={"path": mount, "auth": auth},
-                )
-                root_data = root_payload.get("data")
-                root_items = root_data.get("items") if isinstance(root_data, dict) else None
-                if isinstance(root_items, list):
-                    root_names = {
-                        str(item["name"])
-                        for item in root_items
-                        if isinstance(item, dict) and isinstance(item.get("name"), str)
-                    }
-            for item in items:
-                item_path = item.get("path") if isinstance(item, dict) else None
-                if isinstance(item_path, str) and item_path.startswith("/"):
-                    public_path = self._public_search_path(mount, search_root, item_path, root_names)
-                    if public_path is None:
-                        item.pop("path", None)
-                        item["path_unresolved"] = True
-                    else:
-                        item["path"] = public_path
-        return payload
+        return self._rewrite_search_item_paths(path, payload, auth)
+
+    def search_metadata(self, path: str, field: str, value: str, max_results: int = 20, files_only: bool = False) -> dict[str, Any]:
+        self._ensure_compatible()
+        if not isinstance(max_results, int) or isinstance(max_results, bool) or not 1 <= max_results <= 100:
+            raise ValueError("max_results must be an integer between 1 and 100.")
+        normalized_field = field.strip()
+        normalized_value = value.strip()
+        if not normalized_field:
+            raise ValueError("field must not be empty.")
+        if not normalized_value:
+            raise ValueError("value must not be empty.")
+        if not isinstance(files_only, bool):
+            raise ValueError("files_only must be a boolean.")
+        auth = self._auth_for_path(path)
+        payload = self._json(
+            "POST",
+            "/bridge/wfx/search-metadata",
+            json={
+                "path": path,
+                "field": normalized_field,
+                "value": normalized_value,
+                "max_results": max_results,
+                "files_only": files_only,
+                "auth": auth,
+            },
+        )
+        return self._rewrite_search_item_paths(path, payload, auth)
 
     def open_share_url(self, share_url: str, connection: str = "auto") -> dict[str, Any]:
         self._ensure_compatible()

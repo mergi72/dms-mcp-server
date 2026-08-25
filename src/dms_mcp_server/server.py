@@ -19,6 +19,7 @@ from dms_mcp_server.tracing import CORRELATION_HEADER, correlation_scope
 
 LOGGER = logging.getLogger("mcp")
 SERVICE_NAME = "vfs-mcp-server"
+MCP_SESSION_HEADER = "Mcp-Session-Id"
 READ_ONLY_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -29,7 +30,9 @@ READ_ONLY_ANNOTATIONS = ToolAnnotations(
 def _request_correlation_id(context: Context) -> str | None:
     request = context.request_context.request
     headers = getattr(request, "headers", None)
-    return headers.get(CORRELATION_HEADER) if headers is not None else None
+    if headers is None:
+        return None
+    return headers.get(CORRELATION_HEADER) or headers.get(MCP_SESSION_HEADER)
 
 
 def _run_tool(name: str, operation: Callable[[], dict], correlation_id: str | None = None, **fields: Any) -> dict:
@@ -95,6 +98,19 @@ def create_server(settings: Settings | None = None) -> FastMCP:
             lambda: bridge.search_items(path, query, max_results, files_only),
             _request_correlation_id(ctx),
             path=path,
+            max_results=max_results,
+            files_only=files_only,
+        )
+
+    @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+    def search_metadata(path: str, field: str, value: str, ctx: Context, max_results: int = 20, files_only: bool = False) -> dict:
+        """Search exact metadata values below connection:/path. The path selects the connection; reuse returned paths verbatim."""
+        return _run_tool(
+            "search_metadata",
+            lambda: bridge.search_metadata(path, field, value, max_results, files_only),
+            _request_correlation_id(ctx),
+            path=path,
+            field=field,
             max_results=max_results,
             files_only=files_only,
         )

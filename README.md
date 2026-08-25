@@ -15,6 +15,7 @@ leaves credential resolution to the bridge.
 - `list_connections`
 - `list_items`
 - `search_items`
+- `search_metadata`
 - `open_share_url`
 - `get_item_info`
 - `read_document`
