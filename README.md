@@ -2,12 +2,17 @@
 
 [![CI](https://github.com/mergi72/dms-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mergi72/dms-mcp-server/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.11-blue)](https://www.python.org/)
+[![MCP SDK](https://img.shields.io/badge/MCP%20SDK-v2-5c4ee5)](https://github.com/modelcontextprotocol/python-sdk)
 [![Release](https://img.shields.io/github/v/release/mergi72/dms-mcp-server?label=Release&color=blueviolet)](https://github.com/mergi72/dms-mcp-server/releases/latest)
 
 Read-only Model Context Protocol server for DMS repositories exposed by
 `dms-provider-bridge`. The MCP server never receives DMS usernames, passwords
 or tokens. It forwards only the connection-owned `credential_id` reference and
 leaves credential resolution to the bridge.
+
+The server uses the official Python MCP SDK v2 with Streamable HTTP. The
+server supports stateless HTTP so a long-running DMS operation does not block
+independent MCP clients. The public read-only tool contract remains unchanged.
 
 ## MVP tools
 
@@ -50,17 +55,30 @@ Runtime data lives in `config/mcp.json`, separately from application code:
     "url": "http://127.0.0.1:8765",
     "minimumVersion": "0.2.0"
   },
-  "server": { "host": "127.0.0.1", "port": 8781, "path": "/mcp" },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8781,
+    "path": "/mcp",
+    "statelessHttp": true
+  },
   "runtime": {
     "timeoutSeconds": 30,
     "maxDocumentBytes": 1048576
   },
   "debug": {
     "enable": true,
-    "path": "%APPDATA%\\DMS MCP\\logs"
+    "path": "%APPDATA%\\DMS MCP\\logs",
+    "loggerLevels": {
+      "httpx": "WARNING",
+      "httpcore": "WARNING"
+    }
   }
 }
 ```
+
+`server.statelessHttp` is enabled by default for the SDK v2 runtime. Logger
+levels are data-driven; the defaults keep low-level HTTP transport chatter out
+of Laděnka while preserving MCP tool and operation events.
 
 The service always writes UTF-8 operational events to `mcp.log`. When
 `debug.enable` is true, detailed events are also written to `mcp-debug.log` in

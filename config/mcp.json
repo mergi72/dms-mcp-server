@@ -7,7 +7,7 @@
     "host": "127.0.0.1",
     "port": 8781,
     "path": "/mcp",
-    "statelessHttp": false
+    "statelessHttp": true
   },
   "inspector": {
     "host": "127.0.0.1",
