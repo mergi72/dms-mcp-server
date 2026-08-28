@@ -17,7 +17,7 @@ def _write_config(directory: Path, name: str, payload: dict) -> None:
 def _base_config() -> dict:
     return {
         "bridge": {"url": "http://127.0.0.1:8765", "minimumVersion": "0.2.0"},
-        "server": {"host": "127.0.0.1", "port": 8781, "path": "/mcp"},
+        "server": {"host": "127.0.0.1", "port": 8781, "path": "/mcp", "statelessHttp": False},
         "inspector": {"host": "127.0.0.1", "port": 8780},
         "runtime": {"timeoutSeconds": 30, "maxDocumentBytes": 1_048_576},
         "search": {
@@ -37,7 +37,11 @@ def _base_config() -> dict:
                 }
             }
         },
-        "debug": {"enable": True, "path": "%APPDATA%\\DMS MCP\\logs"},
+        "debug": {
+            "enable": True,
+            "path": "%APPDATA%\\DMS MCP\\logs",
+            "loggerLevels": {"httpx": "WARNING", "httpcore": "WARNING"},
+        },
     }
 
 
@@ -51,6 +55,7 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8781
     assert settings.server_path == "/mcp"
+    assert settings.server_stateless_http is False
     assert settings.inspector_host == "127.0.0.1"
     assert settings.inspector_port == 8780
     assert settings.timeout_seconds == 30
@@ -58,6 +63,7 @@ def test_load_settings_reads_machine_json(tmp_path: Path) -> None:
     assert settings.minimum_bridge_version == "0.2.0"
     assert settings.debug_enabled is True
     assert settings.debug_path.endswith("DMS MCP\\logs")
+    assert settings.logger_levels == (("httpx", "WARNING"), ("httpcore", "WARNING"))
     assert settings.search_mode == "recursive_list"
     assert settings.search_case_sensitive is False
     assert settings.search_max_depth == 64
@@ -87,6 +93,26 @@ def test_debug_config_requires_boolean_enable(tmp_path: Path) -> None:
     _write_config(machine_dir, "mcp.json", config)
 
     with pytest.raises(ValueError, match="debug.enable"):
+        load_settings(machine_dir, tmp_path / "missing-user")
+
+
+def test_debug_logger_levels_reject_unknown_level(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    config = _base_config()
+    config["debug"]["loggerLevels"] = {"httpx": "LOUD"}
+    _write_config(machine_dir, "mcp.json", config)
+
+    with pytest.raises(ValueError, match="debug.loggerLevels.httpx"):
+        load_settings(machine_dir, tmp_path / "missing-user")
+
+
+def test_server_config_requires_boolean_stateless_http(tmp_path: Path) -> None:
+    machine_dir = tmp_path / "machine"
+    config = _base_config()
+    config["server"]["statelessHttp"] = "true"
+    _write_config(machine_dir, "mcp.json", config)
+
+    with pytest.raises(ValueError, match="server.statelessHttp"):
         load_settings(machine_dir, tmp_path / "missing-user")
 
 

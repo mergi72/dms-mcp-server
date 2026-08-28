@@ -15,6 +15,7 @@ def test_configure_logging_creates_normal_and_debug_logs(tmp_path: Path) -> None
         minimum_bridge_version="0.2.0",
         debug_enabled=True,
         debug_path=str(tmp_path),
+        logger_levels=(("httpx", "WARNING"), ("httpcore", "ERROR")),
     )
 
     configure_logging(settings)
@@ -24,3 +25,5 @@ def test_configure_logging_creates_normal_and_debug_logs(tmp_path: Path) -> None
 
     assert "mcp_test_event status=ok" in (tmp_path / "mcp.log").read_text(encoding="utf-8")
     assert "mcp_test_event status=ok" in (tmp_path / "mcp-debug.log").read_text(encoding="utf-8")
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("httpcore").level == logging.ERROR

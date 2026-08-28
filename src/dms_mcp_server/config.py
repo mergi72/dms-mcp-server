@@ -11,6 +11,7 @@ from dms_mcp_server.paths import MACHINE_CONFIG_DIR, USER_CONFIG_DIR
 
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _ROUTABLE_OPERATIONS = {"list_items", "search_items", "get_item_info", "read_document"}
+_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -78,10 +79,12 @@ class Settings:
     server_host: str = "127.0.0.1"
     server_port: int = 8781
     server_path: str = "/mcp"
+    server_stateless_http: bool = False
     inspector_host: str = "127.0.0.1"
     inspector_port: int = 8780
     debug_enabled: bool = False
     debug_path: str = "%APPDATA%\\DMS MCP\\logs"
+    logger_levels: tuple[tuple[str, str], ...] = ()
     search_mode: str = "recursive_list"
     search_case_sensitive: bool = False
     search_max_depth: int = 64
@@ -131,6 +134,22 @@ def _routing_rules(payload: object) -> tuple[tuple[str, str, tuple[str, ...]], .
                 operations.append(operation)
         rules.append((source.strip(), target.strip(), tuple(operations)))
     return tuple(rules)
+
+
+def _logger_levels(payload: object) -> tuple[tuple[str, str], ...]:
+    if payload is None:
+        return ()
+    if not isinstance(payload, dict):
+        raise ValueError("debug.loggerLevels must be a JSON object.")
+    levels: list[tuple[str, str]] = []
+    for logger_name, raw_level in payload.items():
+        if not isinstance(logger_name, str) or not logger_name.strip():
+            raise ValueError("debug.loggerLevels keys must be non-empty logger names.")
+        if not isinstance(raw_level, str) or raw_level.strip().upper() not in _LOG_LEVELS:
+            allowed = ", ".join(sorted(_LOG_LEVELS))
+            raise ValueError(f"debug.loggerLevels.{logger_name} must be one of: {allowed}.")
+        levels.append((logger_name.strip(), raw_level.strip().upper()))
+    return tuple(levels)
 
 
 def load_settings(
@@ -191,6 +210,9 @@ def load_settings(
     server_path = os.getenv("DMS_MCP_SERVER_PATH") or _required_string(server, "path", "server")
     if not server_path.startswith("/"):
         raise ValueError("server.path must start with '/'.")
+    server_stateless_http = server.get("statelessHttp", False)
+    if not isinstance(server_stateless_http, bool):
+        raise ValueError("server.statelessHttp must be a boolean.")
     return Settings(
         bridge_url=bridge_url.rstrip("/"),
         inspector_host=os.getenv("DMS_MCP_INSPECTOR_HOST") or _required_string(inspector, "host", "inspector"),
@@ -206,8 +228,10 @@ def load_settings(
         ),
         server_port=_positive_int(os.getenv("DMS_MCP_SERVER_PORT", server.get("port")), "server.port"),
         server_path=server_path,
+        server_stateless_http=server_stateless_http,
         debug_enabled=debug_enabled,
         debug_path=os.path.expandvars(debug_path.strip()),
+        logger_levels=_logger_levels(debug.get("loggerLevels")),
         search_mode=search_mode,
         search_case_sensitive=search_case_sensitive,
         search_max_depth=_positive_int(search.get("maxDepth", 64), "search.maxDepth"),

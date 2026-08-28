@@ -5,7 +5,8 @@ import logging
 from time import perf_counter
 from typing import Any, Callable
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -55,19 +56,20 @@ def _run_tool(name: str, operation: Callable[[], dict], correlation_id: str | No
         return result
 
 
-def create_server(settings: Settings | None = None) -> FastMCP:
+def create_server(settings: Settings | None = None) -> MCPServer:
     active_settings = settings or load_settings()
     bridge = BridgeClient(active_settings)
-    mcp = FastMCP(
+    mcp = MCPServer(
         "DMS",
+        version=__version__,
         instructions=(
             "Read-only access to DMS connections through DMS Provider Bridge. "
-            "Paths use the connection:/path format."
+            "Paths use the connection:/path format. "
+            "For a known DMS tag, call search_metadata exactly once with path='alfresco:/', field='TAG', and the tag as value. "
+            "If that call returns one folder, reuse its returned public path verbatim. "
+            "Do not repeat an identical successful search_items call in one turn. A result with complete=true and warnings=[] "
+            "is final even when truncated=true solely because max_results limited the returned items."
         ),
-        host=active_settings.server_host,
-        port=active_settings.server_port,
-        streamable_http_path=active_settings.server_path,
-        json_response=True,
     )
 
     @mcp.custom_route("/health", methods=["GET"])
@@ -92,7 +94,7 @@ def create_server(settings: Settings | None = None) -> FastMCP:
 
     @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def search_items(path: str, query: str, ctx: Context, max_results: int = 20, files_only: bool = True) -> dict:
-        """Search names recursively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only."""
+        """Search names recursively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only. Do not repeat an identical successful call in one turn: complete=true with warnings=[] is final, including when truncated=true only because max_results limited the returned items."""
         return _run_tool(
             "search_items",
             lambda: bridge.search_items(path, query, max_results, files_only),
@@ -104,7 +106,7 @@ def create_server(settings: Settings | None = None) -> FastMCP:
 
     @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
     def search_metadata(path: str, field: str, value: str, ctx: Context, max_results: int = 20, files_only: bool = False) -> dict:
-        """Search exact metadata values below connection:/path. The path selects the connection; reuse returned paths verbatim."""
+        """Search exact metadata values below connection:/path. For a known DMS tag use path='alfresco:/', field='TAG', and the tag as value; do not probe eDoCat or alternate field names. If exactly one folder is returned, reuse its public path verbatim in the next operation."""
         return _run_tool(
             "search_metadata",
             lambda: bridge.search_metadata(path, field, value, max_results, files_only),
@@ -157,7 +159,18 @@ def main() -> None:
         settings.server_path,
         log_dir,
     )
-    create_server(settings).run(transport=transport)
+    server = create_server(settings)
+    if args.stdio:
+        server.run(transport="stdio")
+    else:
+        server.run(
+            transport="streamable-http",
+            host=settings.server_host,
+            port=settings.server_port,
+            streamable_http_path=settings.server_path,
+            json_response=True,
+            stateless_http=settings.server_stateless_http,
+        )
 
 
 if __name__ == "__main__":
