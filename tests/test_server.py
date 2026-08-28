@@ -51,12 +51,13 @@ def test_server_registers_only_expected_read_only_tools() -> None:
         "read_document",
     }
     for tool in tools:
-        properties = tool.inputSchema.get("properties", {})
+        wire_tool = tool.model_dump(by_alias=True)
+        properties = wire_tool["inputSchema"].get("properties", {})
         assert "credential_id" not in properties
-        assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint is True
-        assert tool.annotations.destructiveHint is False
-        assert tool.annotations.openWorldHint is False
+        annotations = wire_tool["annotations"]
+        assert annotations["readOnlyHint"] is True
+        assert annotations["destructiveHint"] is False
+        assert annotations["openWorldHint"] is False
 
 
 def test_tool_input_contract_stays_compatible_with_demi() -> None:
@@ -79,7 +80,7 @@ def test_tool_input_contract_stays_compatible_with_demi() -> None:
         "read_document": ({"path": None}, {"path"}),
     }
     for name, (parameters, required) in expected.items():
-        schema = tools[name].inputSchema
+        schema = tools[name].model_dump(by_alias=True)["inputSchema"]
         properties = schema.get("properties", {})
         assert set(properties) == set(parameters)
         assert set(schema.get("required", [])) == required
@@ -88,6 +89,24 @@ def test_tool_input_contract_stays_compatible_with_demi() -> None:
                 assert "default" not in properties[parameter]
             else:
                 assert properties[parameter]["default"] == default
+
+
+def test_tool_descriptions_define_deterministic_tag_search_orchestration() -> None:
+    settings = Settings(
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=1_048_576,
+        minimum_bridge_version="0.2.0",
+    )
+    tools = {tool.name: tool for tool in asyncio.run(create_server(settings).list_tools())}
+
+    metadata_description = tools["search_metadata"].description or ""
+    search_description = tools["search_items"].description or ""
+    assert "path='alfresco:/', field='TAG'" in metadata_description
+    assert "do not probe eDoCat" in metadata_description
+    assert "reuse its public path verbatim" in metadata_description
+    assert "Do not repeat an identical successful call" in search_description
+    assert "complete=true with warnings=[] is final" in search_description
 
 
 def test_server_registers_health_route() -> None:

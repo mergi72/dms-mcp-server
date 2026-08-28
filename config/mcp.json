@@ -6,7 +6,8 @@
   "server": {
     "host": "127.0.0.1",
     "port": 8781,
-    "path": "/mcp"
+    "path": "/mcp",
+    "statelessHttp": true
   },
   "inspector": {
     "host": "127.0.0.1",
@@ -39,6 +40,10 @@
   },
   "debug": {
     "enable": true,
-    "path": "%APPDATA%\\DMS MCP\\logs"
+    "path": "%APPDATA%\\DMS MCP\\logs",
+    "loggerLevels": {
+      "httpx": "WARNING",
+      "httpcore": "WARNING"
+    }
   }
 }
