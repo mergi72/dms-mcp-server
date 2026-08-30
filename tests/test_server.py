@@ -110,6 +110,20 @@ def test_tool_descriptions_define_deterministic_tag_search_orchestration() -> No
     assert "exhaustive with complete=true and warnings=[] is final" in search_description
 
 
+def test_server_instructions_define_final_search_results() -> None:
+    settings = Settings(
+        bridge_url="http://127.0.0.1:8765",
+        timeout_seconds=30,
+        max_document_bytes=1_048_576,
+        minimum_bridge_version="0.2.0",
+    )
+    instructions = create_server(settings).instructions or ""
+
+    assert "For first_matches, reason=result_limit with warnings=[] is a successful final interactive result" in instructions
+    assert "must not be retried" in instructions
+    assert "For exhaustive, complete=true with warnings=[] is final" in instructions
+
+
 def test_server_registers_health_route() -> None:
     settings = Settings(
         bridge_url="http://127.0.0.1:8765",

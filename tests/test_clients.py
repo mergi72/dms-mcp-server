@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from time import perf_counter, sleep
 
 import httpx
 import pytest
@@ -167,6 +168,43 @@ def test_search_items_first_matches_stops_traversal_at_result_limit() -> None:
     assert result["data"]["search"]["complete"] is False
     assert result["data"]["search"]["reason"] == "result_limit"
     assert len(listed_paths) < 11
+
+
+def test_search_items_first_matches_does_not_wait_for_slow_siblings() -> None:
+    settings = _settings()
+    listed_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}},
+            )
+        path = json.loads(request.content)["path"]
+        listed_paths.append(path)
+        if path == "alfresco:/root":
+            return httpx.Response(200, json={"ok": True, "data": {"items": [
+                {"name": "match-first", "is_folder": True},
+                *({"name": f"slow-{index}", "is_folder": True} for index in range(3)),
+            ]}})
+        if path.endswith("/match-first"):
+            return httpx.Response(200, json={"ok": True, "data": {"items": [
+                {"name": "wanted.pdf", "is_folder": False}
+            ]}})
+        sleep(0.5)
+        return httpx.Response(200, json={"ok": True, "data": {"items": []}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    started = perf_counter()
+    result = bridge.search_items("alfresco:/root", "wanted", max_results=1)
+    elapsed = perf_counter() - started
+
+    assert result["data"]["returned"] == 1
+    assert result["data"]["search"]["reason"] == "result_limit"
+    assert listed_paths == ["alfresco:/root", "alfresco:/root/match-first"]
+    assert elapsed < 0.25
 
 
 def test_search_items_exhaustive_keeps_exact_total() -> None:

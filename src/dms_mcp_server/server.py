@@ -67,8 +67,9 @@ def create_server(settings: Settings | None = None) -> MCPServer:
             "Paths use the connection:/path format. "
             "For a known DMS tag, call search_metadata exactly once with path='alfresco:/', field='TAG', and the tag as value. "
             "If that call returns one folder, reuse its returned public path verbatim. "
-            "Do not repeat an identical successful search_items call in one turn. A result with complete=true and warnings=[] "
-            "is final even when truncated=true solely because max_results limited the returned items."
+            "Do not repeat an identical successful search_items call in one turn. "
+            "For first_matches, reason=result_limit with warnings=[] is a successful final interactive result and must not be retried. "
+            "For exhaustive, complete=true with warnings=[] is final."
         ),
     )
 

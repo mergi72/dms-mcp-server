@@ -12,7 +12,8 @@ leaves credential resolution to the bridge.
 
 The server uses the official Python MCP SDK v2 with Streamable HTTP. The
 server supports stateless HTTP so a long-running DMS operation does not block
-independent MCP clients. The public read-only tool contract remains unchanged.
+independent MCP clients. Existing calls remain backward compatible;
+`search_items` adds the optional `search_mode` parameter.
 
 ## MVP tools
 

@@ -329,12 +329,17 @@ class BridgeClient:
         complete = True
         correlation_headers = current_correlation_headers()
 
-        executor = ThreadPoolExecutor(max_workers=self._settings.search_concurrency)
+        # first_matches is an interactive early-return mode. Keep only one
+        # request in flight so reaching max_results never leaves speculative
+        # sibling requests that executor.shutdown() would have to wait for.
+        # exhaustive still uses the configured parallelism for full traversal.
+        worker_limit = 1 if search_mode == "first_matches" else self._settings.search_concurrency
+        executor = ThreadPoolExecutor(max_workers=worker_limit)
         futures: dict[Future[dict[str, Any]], tuple[str, int]] = {}
 
         def submit_available() -> None:
             nonlocal complete
-            while pending and len(futures) < self._settings.search_concurrency:
+            while pending and len(futures) < worker_limit:
                 folder_path, depth = pending.popleft()
                 key = folder_path.casefold()
                 if key in visited:
