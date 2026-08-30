@@ -93,15 +93,23 @@ def create_server(settings: Settings | None = None) -> MCPServer:
         return _run_tool("list_items", lambda: bridge.list_items(path), _request_correlation_id(ctx), path=path)
 
     @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-    def search_items(path: str, query: str, ctx: Context, max_results: int = 20, files_only: bool = True) -> dict:
-        """Search names recursively below connection:/path. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only. Do not repeat an identical successful call in one turn: complete=true with warnings=[] is final, including when truncated=true only because max_results limited the returned items."""
+    def search_items(
+        path: str,
+        query: str,
+        ctx: Context,
+        max_results: int = 20,
+        files_only: bool = True,
+        search_mode: str = "first_matches",
+    ) -> dict:
+        """Search names recursively below connection:/path. Use first_matches for interactive AI requests and exhaustive only when an exact total and global ordering are required. Returned paths are exact and must be reused verbatim; never shorten or rewrite them. By default return unique files only. Do not repeat an identical successful call in one turn: first_matches with reason=result_limit is a successful final result, while exhaustive with complete=true and warnings=[] is final."""
         return _run_tool(
             "search_items",
-            lambda: bridge.search_items(path, query, max_results, files_only),
+            lambda: bridge.search_items(path, query, max_results, files_only, search_mode),
             _request_correlation_id(ctx),
             path=path,
             max_results=max_results,
             files_only=files_only,
+            search_mode=search_mode,
         )
 
     @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)

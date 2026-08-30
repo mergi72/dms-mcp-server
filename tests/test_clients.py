@@ -135,6 +135,73 @@ def test_search_items_recursively_lists_with_one_connection_lookup_and_auth() ->
     assert all(request[1] != "/bridge/wfx/search" for request in requests)
 
 
+def test_search_items_first_matches_stops_traversal_at_result_limit() -> None:
+    settings = _settings()
+    listed_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}},
+            )
+        path = json.loads(request.content)["path"]
+        listed_paths.append(path)
+        if path == "alfresco:/root":
+            return httpx.Response(200, json={"ok": True, "data": {"items": [
+                {"name": f"folder-{index}", "is_folder": True} for index in range(10)
+            ]}})
+        return httpx.Response(200, json={"ok": True, "data": {"items": [
+            {"name": f"result-{path.rsplit('-', 1)[-1]}.pdf", "is_folder": False}
+        ]}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.search_items("alfresco:/root", "result", max_results=2)
+
+    assert result["data"]["returned"] == 2
+    assert result["data"]["total"] is None
+    assert result["data"]["truncated"] is True
+    assert result["data"]["search"]["mode"] == "first_matches"
+    assert result["data"]["search"]["complete"] is False
+    assert result["data"]["search"]["reason"] == "result_limit"
+    assert len(listed_paths) < 11
+
+
+def test_search_items_exhaustive_keeps_exact_total() -> None:
+    settings = _settings()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return _health_response()
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"mount": "alfresco:/", "auth": {"required": False}}},
+            )
+        path = json.loads(request.content)["path"]
+        if path == "alfresco:/root":
+            return httpx.Response(200, json={"ok": True, "data": {"items": [
+                {"name": f"folder-{index}", "is_folder": True} for index in range(4)
+            ]}})
+        return httpx.Response(200, json={"ok": True, "data": {"items": [
+            {"name": f"result-{path.rsplit('-', 1)[-1]}.pdf", "is_folder": False}
+        ]}})
+
+    bridge = BridgeClient(settings, httpx.MockTransport(handler))
+    result = bridge.search_items(
+        "alfresco:/root", "result", max_results=2, search_mode="exhaustive"
+    )
+
+    assert result["data"]["returned"] == 2
+    assert result["data"]["total"] == 4
+    assert result["data"]["truncated"] is True
+    assert result["data"]["search"]["mode"] == "exhaustive"
+    assert result["data"]["search"]["complete"] is True
+    assert result["data"]["search"]["reason"] is None
+
+
 def test_search_items_routes_edocat_tree_through_alfresco_and_preserves_public_mount() -> None:
     settings = _settings(routing=True)
 
@@ -273,6 +340,14 @@ def test_search_items_rejects_invalid_limit(value: object) -> None:
 
     with pytest.raises(ValueError, match="max_results"):
         bridge.search_items("alfresco:/", "query", value)  # type: ignore[arg-type]
+
+
+def test_search_items_rejects_unknown_search_mode() -> None:
+    settings = _settings()
+    bridge = BridgeClient(settings, httpx.MockTransport(lambda _request: _health_response()))
+
+    with pytest.raises(ValueError, match="search_mode"):
+        bridge.search_items("alfresco:/", "query", search_mode="fast")
 
 
 def test_open_share_url_resolves_stats_and_lists_folder() -> None:

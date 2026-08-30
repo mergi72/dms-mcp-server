@@ -152,7 +152,7 @@ function renderUI(tool, payload, request) {
   if (tool === 'search_items') {
     const entries = result.data?.items || [];
     const items = document.createElement('div'); items.className = 'items';
-    entries.forEach(item => items.append(itemButton(item.name || '<unnamed>', `${request.arguments.path.split(':/')[0]}:${item.path}`, item.is_folder === true)));
+    entries.forEach(item => items.append(itemButton(item.name || '<unnamed>', item.path, item.is_folder === true)));
     if (!entries.length) items.textContent = 'Nenalezeny žádné položky.';
     uiView.append(valueCard({query: result.data?.query, total: result.data?.total, truncated: result.data?.truncated}), items); return;
   }

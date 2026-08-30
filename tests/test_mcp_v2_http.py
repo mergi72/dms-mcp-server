@@ -35,19 +35,19 @@ class _ConcurrentBridge:
     def list_connections(self) -> dict:
         return {"ok": True, "data": {"connections": ["alfresco"]}}
 
-    def search_items(self, path: str, query: str, max_results: int, files_only: bool) -> dict:
+    def search_items(self, path: str, query: str, max_results: int, files_only: bool, search_mode: str = "first_matches") -> dict:
         self.search_started.set()
         self.release_search.wait(timeout=5)
         return {"ok": True, "data": {"path": path, "query": query, "items": []}}
 
 
 class _FailingBridge(_ConcurrentBridge):
-    def search_items(self, path: str, query: str, max_results: int, files_only: bool) -> dict:
+    def search_items(self, path: str, query: str, max_results: int, files_only: bool, search_mode: str = "first_matches") -> dict:
         raise RuntimeError("simulated bridge failure")
 
 
 class _TimeoutBridge(_ConcurrentBridge):
-    def search_items(self, path: str, query: str, max_results: int, files_only: bool) -> dict:
+    def search_items(self, path: str, query: str, max_results: int, files_only: bool, search_mode: str = "first_matches") -> dict:
         raise TimeoutError("simulated bridge timeout")
 
 

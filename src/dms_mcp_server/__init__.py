@@ -1,3 +1,3 @@
 """MCP adapter for DMS Provider Bridge."""
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"

@@ -4,7 +4,7 @@ import base64
 import hashlib
 import logging
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from time import perf_counter
 from typing import Any
 from urllib.parse import quote
@@ -258,15 +258,24 @@ class BridgeClient:
         path: str,
         auth: dict[str, Any] | None,
         correlation_headers: dict[str, str],
+        timeout_seconds: float,
     ) -> dict[str, Any]:
         return self._json(
             "POST",
             "/bridge/wfx/list",
             headers=correlation_headers,
+            timeout=timeout_seconds,
             json={"path": path, "auth": auth},
         )
 
-    def search_items(self, path: str, query: str, max_results: int = 20, files_only: bool = True) -> dict[str, Any]:
+    def search_items(
+        self,
+        path: str,
+        query: str,
+        max_results: int = 20,
+        files_only: bool = True,
+        search_mode: str = "first_matches",
+    ) -> dict[str, Any]:
         self._ensure_compatible()
         if (
             not isinstance(max_results, int)
@@ -281,6 +290,8 @@ class BridgeClient:
             raise ValueError("query must not be empty.")
         if not isinstance(files_only, bool):
             raise ValueError("files_only must be a boolean.")
+        if search_mode not in {"first_matches", "exhaustive"}:
+            raise ValueError("search_mode must be 'first_matches' or 'exhaustive'.")
         execution_path, requested_connection, execution_connection, routed = self._route_path("search_items", path)
         connection_name = self._connection_name(execution_path)
         if connection_name is None:
@@ -310,45 +321,60 @@ class BridgeClient:
         pending: deque[tuple[str, int]] = deque([(start_path or mount, 0)])
         visited: set[str] = set()
         matches: list[dict[str, Any]] = []
+        matched_paths: set[str] = set()
         warnings: list[str] = []
         started = perf_counter()
+        deadline = started + self._settings.search_timeout_seconds
         provider: str | None = None
         complete = True
         correlation_headers = current_correlation_headers()
 
-        while pending:
-            if perf_counter() - started >= self._settings.search_timeout_seconds:
-                warnings.append("Search timeout reached.")
-                complete = False
-                break
-            batch: list[tuple[str, int]] = []
-            while pending and len(batch) < self._settings.search_concurrency:
+        executor = ThreadPoolExecutor(max_workers=self._settings.search_concurrency)
+        futures: dict[Future[dict[str, Any]], tuple[str, int]] = {}
+
+        def submit_available() -> None:
+            nonlocal complete
+            while pending and len(futures) < self._settings.search_concurrency:
                 folder_path, depth = pending.popleft()
                 key = folder_path.casefold()
                 if key in visited:
                     continue
                 if len(visited) >= self._settings.search_max_folders:
-                    warnings.append("Maximum folder count reached.")
+                    if "Maximum folder count reached." not in warnings:
+                        warnings.append("Maximum folder count reached.")
                     complete = False
                     pending.clear()
-                    break
+                    return
+                remaining = deadline - perf_counter()
+                if remaining <= 0:
+                    return
                 visited.add(key)
-                batch.append((folder_path, depth))
-            if not batch:
-                continue
+                future = executor.submit(
+                    self._list_items_with_auth,
+                    folder_path,
+                    auth,
+                    correlation_headers,
+                    min(self._settings.timeout_seconds, remaining),
+                )
+                futures[future] = (folder_path, depth)
 
-            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
-                futures = {
-                    executor.submit(
-                        self._list_items_with_auth,
-                        folder_path,
-                        auth,
-                        correlation_headers,
-                    ): (folder_path, depth)
-                    for folder_path, depth in batch
-                }
-                for future in as_completed(futures):
-                    folder_path, depth = futures[future]
+        try:
+            submit_available()
+            while futures:
+                remaining = deadline - perf_counter()
+                if remaining <= 0:
+                    warnings.append("Search timeout reached.")
+                    complete = False
+                    break
+                done, _pending_futures = wait(
+                    tuple(futures), timeout=remaining, return_when=FIRST_COMPLETED
+                )
+                if not done:
+                    warnings.append("Search timeout reached.")
+                    complete = False
+                    break
+                for future in done:
+                    folder_path, depth = futures.pop(future)
                     try:
                         payload = future.result()
                     except Exception as exc:
@@ -381,19 +407,38 @@ class BridgeClient:
                         if not self._settings.search_case_sensitive:
                             comparable = comparable.casefold()
                         if needle in comparable and (not files_only or not is_folder):
-                            matches.append(item)
+                            match_key = public_path.casefold()
+                            if match_key not in matched_paths:
+                                matched_paths.add(match_key)
+                                matches.append(item)
                         if is_folder and depth < self._settings.search_max_depth:
                             pending.append((public_path, depth + 1))
                         elif is_folder and depth >= self._settings.search_max_depth:
                             complete = False
                             if "Maximum search depth reached." not in warnings:
                                 warnings.append("Maximum search depth reached.")
+                if search_mode == "first_matches" and len(matches) >= max_results:
+                    complete = False
+                    break
+                submit_available()
+            if not futures and pending:
+                complete = False
+                if perf_counter() >= deadline:
+                    if "Search timeout reached." not in warnings:
+                        warnings.append("Search timeout reached.")
+                elif "Maximum folder count reached." not in warnings:
+                    warnings.append("Maximum folder count reached.")
+        finally:
+            for future in futures:
+                future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
 
         unique: dict[str, dict[str, Any]] = {}
         for item in matches:
             unique.setdefault(str(item["path"]).casefold(), item)
         ordered = sorted(unique.values(), key=lambda item: str(item["path"]).casefold())
         returned = ordered[:max_results]
+        result_limit_reached = search_mode == "first_matches" and not complete and len(ordered) >= max_results
         if routed:
             execution_prefix = f"{execution_connection}:/"
             requested_prefix = f"{requested_connection}:/"
@@ -403,8 +448,8 @@ class BridgeClient:
                     item["path"] = requested_prefix + item_path[len(execution_prefix):]
         duration_ms = round((perf_counter() - started) * 1000)
         LOGGER.info(
-            "mcp_recursive_search path=%r query=%r folders_scanned=%d total=%d returned=%d complete=%s duration_ms=%d",
-            path, normalized_query, len(visited), len(ordered), len(returned), complete, duration_ms,
+            "mcp_recursive_search path=%r query=%r search_mode=%s folders_scanned=%d total=%r returned=%d complete=%s duration_ms=%d",
+            path, normalized_query, search_mode, len(visited), None if result_limit_reached else len(ordered), len(returned), complete, duration_ms,
         )
         return {
             "ok": True,
@@ -412,16 +457,17 @@ class BridgeClient:
                 "connection": requested_connection or connection_name,
                 "path": path.partition(":")[2] or "/",
                 "query": normalized_query,
-                "total": len(ordered),
+                "total": None if result_limit_reached else len(ordered),
                 "returned": len(returned),
                 "items": returned,
                 "truncated": len(ordered) > len(returned) or not complete,
                 "provider": provider,
                 "search": {
-                    "mode": "recursive_list",
+                    "mode": search_mode,
                     "folders_scanned": len(visited),
                     "duration_ms": duration_ms,
                     "complete": complete,
+                    "reason": "result_limit" if result_limit_reached else None,
                     "warnings": warnings,
                 },
                 "routing": self._routing_data(

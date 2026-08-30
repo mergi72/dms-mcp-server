@@ -73,7 +73,7 @@ def test_tool_input_contract_stays_compatible_with_demi() -> None:
         "bridge_health": ({}, set()),
         "list_connections": ({}, set()),
         "list_items": ({"path": "/"}, set()),
-        "search_items": ({"path": None, "query": None, "max_results": 20, "files_only": True}, {"path", "query"}),
+        "search_items": ({"path": None, "query": None, "max_results": 20, "files_only": True, "search_mode": "first_matches"}, {"path", "query"}),
         "search_metadata": ({"path": None, "field": None, "value": None, "max_results": 20, "files_only": False}, {"path", "field", "value"}),
         "open_share_url": ({"share_url": None, "connection": "auto"}, {"share_url"}),
         "get_item_info": ({"path": None}, {"path"}),
@@ -106,7 +106,8 @@ def test_tool_descriptions_define_deterministic_tag_search_orchestration() -> No
     assert "do not probe eDoCat" in metadata_description
     assert "reuse its public path verbatim" in metadata_description
     assert "Do not repeat an identical successful call" in search_description
-    assert "complete=true with warnings=[] is final" in search_description
+    assert "first_matches with reason=result_limit is a successful final result" in search_description
+    assert "exhaustive with complete=true and warnings=[] is final" in search_description
 
 
 def test_server_registers_health_route() -> None:

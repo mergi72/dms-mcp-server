@@ -115,3 +115,8 @@ def test_html_offers_parent_folder_navigation() -> None:
 def test_html_offers_native_search() -> None:
     assert 'onclick="searchTool()"' in HTML
     assert "callTool('search_items'" in HTML
+
+
+def test_search_ui_uses_public_item_path_verbatim() -> None:
+    assert "itemButton(item.name || '<unnamed>', item.path" in HTML
+    assert "request.arguments.path.split(':/')[0]" not in HTML
