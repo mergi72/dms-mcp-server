@@ -203,6 +203,7 @@ def test_search_items_first_matches_does_not_wait_for_slow_siblings() -> None:
 
     assert result["data"]["returned"] == 1
     assert result["data"]["search"]["reason"] == "result_limit"
+    assert result["data"]["search"]["warnings"] == []
     assert listed_paths == ["alfresco:/root", "alfresco:/root/match-first"]
     assert elapsed < 0.25
 

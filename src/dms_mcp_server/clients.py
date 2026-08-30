@@ -327,6 +327,7 @@ class BridgeClient:
         deadline = started + self._settings.search_timeout_seconds
         provider: str | None = None
         complete = True
+        result_limit_hit = False
         correlation_headers = current_correlation_headers()
 
         # first_matches is an interactive early-return mode. Keep only one
@@ -424,9 +425,10 @@ class BridgeClient:
                                 warnings.append("Maximum search depth reached.")
                 if search_mode == "first_matches" and len(matches) >= max_results:
                     complete = False
+                    result_limit_hit = True
                     break
                 submit_available()
-            if not futures and pending:
+            if not result_limit_hit and not futures and pending:
                 complete = False
                 if perf_counter() >= deadline:
                     if "Search timeout reached." not in warnings:
@@ -443,7 +445,7 @@ class BridgeClient:
             unique.setdefault(str(item["path"]).casefold(), item)
         ordered = sorted(unique.values(), key=lambda item: str(item["path"]).casefold())
         returned = ordered[:max_results]
-        result_limit_reached = search_mode == "first_matches" and not complete and len(ordered) >= max_results
+        result_limit_reached = result_limit_hit and len(ordered) >= max_results
         if routed:
             execution_prefix = f"{execution_connection}:/"
             requested_prefix = f"{requested_connection}:/"
